@@ -1,0 +1,10 @@
+## Visual Studio временные файлы и кэш
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+## Результаты сборки (bin/obj)
+[Bb]in/
+[Oo]bj/
