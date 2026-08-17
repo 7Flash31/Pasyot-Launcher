@@ -11,6 +11,12 @@
 
   <ItemGroup>
     <PackageReference Include="CmlLib.Core" Version="4.0.6" />
+    <PackageReference Include="CmlLib.Core.Installer.Forge" Version="1.1.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="Resources\" />
+    <Folder Include="ViewModels\" />
   </ItemGroup>
 
 </Project>

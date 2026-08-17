@@ -1,0 +1,103 @@
+﻿<UserControl x:Class="Pasyot_Launcher.Views.ModpackProfile"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
+             xmlns:local="clr-namespace:Pasyot_Launcher.Views"
+             mc:Ignorable="d" 
+             d:DesignHeight="70" d:DesignWidth="250">
+
+    <UserControl.Resources>
+        <Style x:Key="DeleteButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="#888888"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="btnBorder" Background="{TemplateBinding Background}" CornerRadius="4" Padding="4">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="btnBorder" Property="Background" Value="#382020"/>
+                                <Setter Property="Foreground" Value="#FF5555"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="btnBorder" Property="Background" Value="#501B1B"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Resources>
+
+    <Border x:Name="CardBorder" 
+            CornerRadius="8" 
+            Padding="10,8" 
+            Margin="4"
+            Cursor="Hand"
+            MouseLeftButtonDown="CardBorder_MouseLeftButtonDown">
+
+        <Border.Style>
+            <Style TargetType="Border">
+                <Setter Property="Background" Value="#252525"/>
+                <Style.Triggers>
+                    <Trigger Property="IsMouseOver" Value="True">
+                        <Setter Property="Background" Value="#333338"/>
+                    </Trigger>
+                    <EventTrigger RoutedEvent="UIElement.PreviewMouseDown">
+                        <BeginStoryboard>
+                            <Storyboard>
+                                <ColorAnimation Storyboard.TargetProperty="(Border.Background).(SolidColorBrush.Color)"
+                                                To="#1C1C1E" 
+                                                Duration="0:0:0.1"/>
+                            </Storyboard>
+                        </BeginStoryboard>
+                    </EventTrigger>
+                </Style.Triggers>
+            </Style>
+        </Border.Style>
+
+        <Grid Margin="0,-4,0,-4">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <Ellipse Grid.Column="0" 
+                     Width="48" 
+                     Height="48" 
+                     Fill="#3F3F46" 
+                     VerticalAlignment="Center"/>
+
+            <StackPanel Grid.Column="1" 
+                        VerticalAlignment="Center" 
+                        Margin="12,0,8,0">
+
+                <TextBlock x:Name="ModpackName" Text="Sample Modpack" 
+                           Foreground="White"
+                           FontWeight="SemiBold" 
+                           FontSize="14"
+                           TextTrimming="CharacterEllipsis"/>
+
+                <TextBlock x:Name="MinecraftVersion" Text="Sample Version" 
+                           Foreground="#A1A1AA" 
+                           FontSize="12" 
+                           Margin="0,2,0,0"/>
+            </StackPanel>
+
+            <Button Grid.Column="2" 
+                    x:Name="DeleteButton"
+                    Content="✖" 
+                    FontSize="12"
+                    Width="26" Height="26"
+                    VerticalAlignment="Center"
+                    Style="{StaticResource DeleteButtonStyle}"
+                    ToolTip="Удалить сборку"
+                    Click="DeleteButton_Click"/>
+        </Grid>
+    </Border>
+</UserControl>

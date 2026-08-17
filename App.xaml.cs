@@ -1,14 +1,20 @@
-﻿using System.Configuration;
-using System.Data;
+﻿using Pasyot_Launcher.Models;
+using Pasyot_Launcher.Services;
 using System.Windows;
 
 namespace Pasyot_Launcher
 {
-    /// <summary>
-    /// Interaction logic for App.xaml
-    /// </summary>
     public partial class App : Application
     {
-    }
+        protected override void OnStartup(StartupEventArgs e)
+        {
+            base.OnStartup(e);
 
+            UserSession? session = SecureStorage.LoadSession();
+            if (session != null)
+            {
+                AuthService.SaveSession(session.AccessToken, session.RefreshToken, new UserProfile());
+            }
+        }
+    }
 }
