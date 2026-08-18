@@ -7,7 +7,6 @@ using System.Threading.Tasks;
 
 namespace Pasyot_Launcher.Models
 {
-    // Формат файла .pasyotpack — см. API.md, раздел "GET /modpacks/{name}/pack".
     public class PasyotPack
     {
         [JsonPropertyName("format")]
@@ -16,7 +15,6 @@ namespace Pasyot_Launcher.Models
         [JsonPropertyName("server")]
         public string Server { get; set; } = "";
 
-        // Единственный идентификатор сборки: он же slug, он же имя папки на диске.
         [JsonPropertyName("name")]
         public string Name { get; set; } = "";
 
@@ -29,7 +27,6 @@ namespace Pasyot_Launcher.Models
         [JsonPropertyName("version")]
         public int Version { get; set; }
 
-        // Готовый абсолютный адрес манифеста — собирать его самим не нужно.
         [JsonPropertyName("manifest")]
         public string Manifest { get; set; } = "";
     }
