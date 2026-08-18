@@ -1,55 +1,104 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using Pasyot_Launcher.Models;
+using System;
+using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
-using Pasyot_Launcher.Models; 
 
-namespace Pasyot_Launcher
+public class AppSettings
 {
-    public class AppSettings
+    public string ProfilesPath { get; set; } = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        "pasyot-launcher",
+        "profiles");
+
+    public int RamMb { get; set; } = 4096;
+
+    public string ServerUrl { get; set; } = "https://pasyot.com";
+
+    public string JavaArgs { get; set; } = string.Empty;
+
+    public string EnvVars { get; set; } = string.Empty;
+
+    public List<PasyotPack> InstalledPacks { get; set; } = new();
+
+    public string SelectedSlug { get; set; } = string.Empty;
+
+    public static readonly string SettingsFilePath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        "pasyot-launcher",
+        "settings.json");
+
+    private static AppSettings? _instance;
+    private static readonly object _lock = new();
+
+    public static AppSettings Instance
     {
-        public string ProfilesPath { get; set; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), ".pasyot", "profiles");
-        public int RamMb { get; set; } = 4096;
-        public string ServerUrl { get; set; } = "https://pasyot.com";
-        public string JavaArgs { get; set; } = string.Empty;
-        public string EnvVars { get; set; } = string.Empty;
-
-        public List<PasyotPack> InstalledPacks { get; set; } = new List<PasyotPack>();
-        public string SelectedSlug { get; set; } = string.Empty;
-
-        private static readonly string SettingsFilePath = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            ".pasyot",
-            "settings.json"
-        );
-
-        public static AppSettings Load()
+        get
         {
-            try
+            lock (_lock)
             {
-                if (File.Exists(SettingsFilePath))
-                {
-                    string json = File.ReadAllText(SettingsFilePath);
-                    return JsonSerializer.Deserialize<AppSettings>(json) ?? new AppSettings();
-                }
+                return _instance ??= LoadFromDisk();
             }
-            catch
-            {
-            }
+        }
+    }
 
-            return new AppSettings();
+    public static AppSettings Reload()
+    {
+        lock (_lock)
+        {
+            _instance = LoadFromDisk();
+            return _instance;
+        }
+    }
+
+    private static AppSettings LoadFromDisk()
+    {
+        try
+        {
+            if (File.Exists(SettingsFilePath))
+            {
+                string json = File.ReadAllText(SettingsFilePath);
+                var loaded = JsonSerializer.Deserialize<AppSettings>(json);
+
+                if (loaded != null)
+                    return loaded;
+
+                Debug.WriteLine(
+                    $"[AppSettings] Файл {SettingsFilePath} пуст или имеет неверный формат. " +
+                    "Используются настройки по умолчанию.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine(
+                $"[AppSettings] Не удалось прочитать {SettingsFilePath}: {ex.Message}. " +
+                "Используются настройки по умолчанию.");
         }
 
-        public void Save()
-        {
-            string dir = Path.GetDirectoryName(SettingsFilePath)!;
-            if (!Directory.Exists(dir))
-            {
-                Directory.CreateDirectory(dir);
-            }
+        return new AppSettings();
+    }
 
-            string json = JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true });
-            File.WriteAllText(SettingsFilePath, json);
+    public void Save()
+    {
+        string? directory = Path.GetDirectoryName(SettingsFilePath);
+
+        if (!string.IsNullOrEmpty(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+
+        string json = JsonSerializer.Serialize(
+            this,
+            new JsonSerializerOptions
+            {
+                WriteIndented = true
+            });
+
+        File.WriteAllText(SettingsFilePath, json);
+
+        lock (_lock)
+        {
+            _instance = this;
         }
     }
 }

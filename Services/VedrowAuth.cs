@@ -25,17 +25,12 @@ namespace Pasyot_Launcher.Services
 
         public static async Task StartAuthAsync()
         {
-            int port = GetFreePort();
-            string dynamicRedirectUri = $"http://127.0.0.1:{port}{RedirectPath}";
+            string dynamicRedirectUri = StartListenerOnFreePort();
 
             string codeVerifier = GenerateCodeVerifier();
             string codeChallenge = GenerateCodeChallenge(codeVerifier);
             string state = Guid.NewGuid().ToString("N");
             string nonce = Guid.NewGuid().ToString("N");
-
-            _httpListener = new HttpListener();
-            _httpListener.Prefixes.Add(dynamicRedirectUri);
-            _httpListener.Start();
 
             string authUrl = $"{VedrowBaseUrl}/oauth/authorize" +
                              $"?response_type=code" +
@@ -54,7 +49,27 @@ namespace Pasyot_Launcher.Services
 
             try
             {
-                HttpListenerContext context = await _httpListener.GetContextAsync();
+                HttpListenerContext? context = null;
+                for (int attempt = 0; attempt < 10 && context == null; attempt++)
+                {
+                    HttpListenerContext candidate = await _httpListener!.GetContextAsync();
+                    if (candidate.Request.Url?.AbsolutePath == RedirectPath)
+                    {
+                        context = candidate;
+                    }
+                    else
+                    {
+                        candidate.Response.StatusCode = 404;
+                        candidate.Response.Close();
+                    }
+                }
+
+                if (context == null)
+                {
+                    MessageBox.Show("Не удалось получить ответ авторизации.");
+                    return;
+                }
+
                 HttpListenerRequest request = context.Request;
                 HttpListenerResponse response = context.Response;
 
@@ -63,17 +78,20 @@ namespace Pasyot_Launcher.Services
 
                 if (returnedState != state)
                 {
-                    ShowHtmlResponse(response, "Ошибка: Не совпал параметр state.");
+                    ShowHtmlResponse(response, false, "Ошибка авторизации",
+                        "Не совпал параметр state. Попробуйте войти ещё раз в приложении.");
                     return;
                 }
 
                 if (string.IsNullOrEmpty(code))
                 {
-                    ShowHtmlResponse(response, "Ошибка: Авторизация была отменена или код не получен.");
+                    ShowHtmlResponse(response, false, "Авторизация отменена",
+                        "Код авторизации не получен. Попробуйте войти ещё раз в приложении.");
                     return;
                 }
 
-                ShowHtmlResponse(response, "<h2>Авторизация успешна!</h2><p>Можете закрыть эту вкладку и вернуться в приложение.</p>");
+                ShowHtmlResponse(response, true, "Авторизация успешна",
+                    "Можете закрыть эту вкладку и вернуться в приложение.");
 
                 await ExchangeCodeForTokenAsync(code, codeVerifier, dynamicRedirectUri);
             }
@@ -171,18 +189,24 @@ namespace Pasyot_Launcher.Services
                 {
                     HttpResponseMessage response = await client.GetAsync($"{VedrowApiUrl}/oauth/userinfo");
 
-                    if (response.StatusCode == HttpStatusCode.Unauthorized && !string.IsNullOrEmpty(session.RefreshToken))
+                    if (response.StatusCode == HttpStatusCode.Unauthorized)
                     {
-                        string? newAccessToken = await RefreshAccessTokenAsync(session.RefreshToken);
-                        if (!string.IsNullOrEmpty(newAccessToken))
+                        if (!string.IsNullOrEmpty(session.RefreshToken))
                         {
-                            UserProfile? refreshedProfile = await FetchUserInfoAsync(newAccessToken);
-                            if (refreshedProfile != null)
+                            string? newAccessToken = await RefreshAccessTokenAsync(session.RefreshToken);
+                            if (!string.IsNullOrEmpty(newAccessToken))
                             {
-                                AuthService.SaveSession(newAccessToken, session.RefreshToken, refreshedProfile);
-                                return (refreshedProfile, false);
+                                UserProfile? refreshedProfile = await FetchUserInfoAsync(newAccessToken);
+                                if (refreshedProfile != null)
+                                {
+                                    AuthService.SaveSession(newAccessToken, session.RefreshToken, refreshedProfile);
+                                    return (refreshedProfile, false);
+                                }
                             }
                         }
+
+                        // Токен истёк и обновить его нечем (нет refresh-токена или сервер его отклонил) —
+                        // сессия невалидна, нужен новый вход.
                         return (null, true);
                     }
 
@@ -221,15 +245,101 @@ namespace Pasyot_Launcher.Services
             }
         }
 
-        private static void ShowHtmlResponse(HttpListenerResponse response, string htmlMessage)
+        private static void ShowHtmlResponse(HttpListenerResponse response, bool isSuccess, string title, string message)
         {
-            string html = $"<html><head><meta charset='utf-8'></head><body>{htmlMessage}</body></html>";
+            string html = BuildAuthResultPage(isSuccess, title, message);
             byte[] buffer = Encoding.UTF8.GetBytes(html);
+            response.ContentType = "text/html; charset=utf-8";
             response.ContentLength64 = buffer.Length;
             using (Stream output = response.OutputStream)
             {
                 output.Write(buffer, 0, buffer.Length);
             }
+        }
+
+        private static string BuildAuthResultPage(bool isSuccess, string title, string message)
+        {
+            string accent = isSuccess ? "#22C55E" : "#EF4444";
+            string icon = isSuccess
+                ? "<svg viewBox=\"0 0 24 24\" width=\"30\" height=\"30\" fill=\"none\" stroke=\"white\" stroke-width=\"2.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><polyline points=\"20 6 9 17 4 12\"/></svg>"
+                : "<svg viewBox=\"0 0 24 24\" width=\"30\" height=\"30\" fill=\"none\" stroke=\"white\" stroke-width=\"2.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><line x1=\"18\" y1=\"6\" x2=\"6\" y2=\"18\"/><line x1=\"6\" y1=\"6\" x2=\"18\" y2=\"18\"/></svg>";
+
+            return $$"""
+            <!DOCTYPE html>
+            <html lang="ru">
+            <head>
+                <meta charset="utf-8" />
+                <meta name="viewport" content="width=device-width, initial-scale=1" />
+                <title>Pasyot Launcher</title>
+                <style>
+                    :root { color-scheme: dark; }
+                    * { box-sizing: border-box; }
+                    body {
+                        margin: 0;
+                        min-height: 100vh;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        background: radial-gradient(circle at top, #1f1f22 0%, #0e0e10 65%);
+                        font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+                        color: #ffffff;
+                    }
+                    .card {
+                        width: min(420px, 90vw);
+                        background: #1c1c1e;
+                        border: 1px solid #2a2a2d;
+                        border-radius: 16px;
+                        padding: 40px 32px;
+                        text-align: center;
+                        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+                        animation: rise 0.35s ease-out;
+                    }
+                    .icon {
+                        width: 64px;
+                        height: 64px;
+                        margin: 0 auto 20px;
+                        border-radius: 50%;
+                        background: {{accent}};
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        box-shadow: 0 0 0 6px {{accent}}22;
+                    }
+                    h1 {
+                        font-size: 20px;
+                        margin: 0 0 8px;
+                        font-weight: 600;
+                    }
+                    p {
+                        font-size: 14px;
+                        color: #a1a1aa;
+                        line-height: 1.5;
+                        margin: 0;
+                    }
+                    .brand {
+                        margin-top: 28px;
+                        font-size: 11px;
+                        letter-spacing: 0.08em;
+                        text-transform: uppercase;
+                        color: #55555a;
+                    }
+                    @keyframes rise {
+                        from { opacity: 0; transform: translateY(8px); }
+                        to { opacity: 1; transform: translateY(0); }
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="card">
+                    <div class="icon">{{icon}}</div>
+                    <h1>{{title}}</h1>
+                    <p>{{message}}</p>
+                    <div class="brand">Pasyot Launcher</div>
+                </div>
+                <script>setTimeout(function () { window.close(); }, 5000);</script>
+            </body>
+            </html>
+            """;
         }
 
         private static void StopServer()
@@ -266,6 +376,32 @@ namespace Pasyot_Launcher.Services
             int port = ((IPEndPoint)listener.LocalEndpoint).Port;
             listener.Stop();
             return port;
+        }
+
+        private static string StartListenerOnFreePort()
+        {
+            const int maxAttempts = 5;
+
+            for (int i = 0; i < maxAttempts; i++)
+            {
+                int port = GetFreePort();
+                string redirectUri = $"http://127.0.0.1:{port}{RedirectPath}";
+                var listener = new HttpListener();
+                listener.Prefixes.Add(redirectUri);
+
+                try
+                {
+                    listener.Start();
+                    _httpListener = listener;
+                    return redirectUri;
+                }
+                catch (HttpListenerException)
+                {
+                    listener.Close();
+                }
+            }
+
+            throw new InvalidOperationException("Не удалось запустить локальный сервер для авторизации.");
         }
 
         private static string GenerateCodeChallenge(string codeVerifier)

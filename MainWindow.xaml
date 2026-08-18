@@ -8,7 +8,8 @@
         Title="Pasyot Launcher" Height="500" Width="850"
         MinHeight="450" MinWidth="750"
         Background="#181818" Foreground="White"
-        WindowStartupLocation="CenterScreen">
+        WindowStartupLocation="CenterScreen"
+        Icon="/Resources/app.ico">
 
     <Window.Resources>
         <Style x:Key="CustomScrollBar" TargetType="{x:Type ScrollBar}">
@@ -175,21 +176,42 @@
         </Grid.RowDefinitions>
 
         <Grid Grid.Row="0" Margin="20,10">
-            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                <Border Width="40" Height="40" CornerRadius="20" Background="#252525">
-                    <Ellipse x:Name="ProfileIcon" Width="36" Height="36" Fill="#007ACC"/>
-                </Border>
-                <StackPanel VerticalAlignment="Center" Margin="12,0,0,0">
-                    <TextBlock x:Name="ProfileText" Text="Sample Text" FontWeight="Bold" FontSize="14" Foreground="White"/>
+            <Border x:Name="ProfileArea"
+                    Background="Transparent"
+                    Cursor="Hand"
+                    HorizontalAlignment="Left"
+                    MouseLeftButtonUp="ProfileArea_MouseLeftButtonUp">
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <Border Width="40" Height="40" CornerRadius="20" Background="#252525">
+                        <Ellipse x:Name="ProfileIcon" Width="36" Height="36" Fill="#007ACC"/>
+                    </Border>
+                    <StackPanel VerticalAlignment="Center" Margin="12,0,0,0">
+                        <TextBlock x:Name="ProfileText" Text="Sample Text" FontWeight="Bold" FontSize="14" Foreground="White"/>
+                    </StackPanel>
                 </StackPanel>
-            </StackPanel>
+            </Border>
 
-            <Button x:Name="SettingsButton" 
-                    Content="⚙ Настройки" 
+            <Popup x:Name="ProfileMenuPopup"
+                   PlacementTarget="{Binding ElementName=ProfileArea}"
+                   Placement="Bottom"
+                   StaysOpen="False"
+                   AllowsTransparency="True">
+                <Border Background="#252525" BorderBrush="#333333" BorderThickness="1" CornerRadius="6" Padding="4" Margin="0,6,0,0">
+                    <Button x:Name="LogoutButton"
+                            Content="Выйти"
+                            Style="{StaticResource SecondaryButtonStyle}"
+                            Height="35" Width="110"
+                            Cursor="Hand"
+                            Click="LogoutButton_Click"/>
+                </Border>
+            </Popup>
+
+            <Button x:Name="SettingsButton"
+                    Content="⚙ Настройки"
                     Style="{StaticResource SecondaryButtonStyle}"
-                    HorizontalAlignment="Right" 
+                    HorizontalAlignment="Right"
                     VerticalAlignment="Center"
-                    Height="35" Width="110" 
+                    Height="35" Width="110"
                     Cursor="Hand"
                     Click="SettingsButton_Click"/>
         </Grid>
@@ -208,19 +230,31 @@
                         <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
 
-                    <TextBlock Text="СБОРКИ" Foreground="#888888" FontSize="11" FontWeight="Bold" Margin="5,0,0,8"/>
+                    <TextBlock Text="Pasyotpacks" Foreground="#888888" FontSize="11" FontWeight="Bold" Margin="5,0,0,8"/>
 
-                    <ScrollViewer x:Name="ModpackList" 
+                    <ScrollViewer x:Name="ModpackList"
                                   Grid.Row="1"
                                   Style="{StaticResource CustomScrollViewer}"
-                                  VerticalScrollBarVisibility="Auto" 
+                                  VerticalScrollBarVisibility="Auto"
                                   HorizontalScrollBarVisibility="Disabled">
                         <StackPanel x:Name="ModpackStackPanel" HorizontalAlignment="Stretch" VerticalAlignment="Top" />
                     </ScrollViewer>
 
+                    <TextBlock x:Name="EmptyModpacksText"
+                               Grid.Row="1"
+                               Text="Нажмите «+ Добавить pasyotpack»,&#x0a;"
+                               Foreground="#666666"
+                               FontSize="12"
+                               TextWrapping="Wrap"
+                               TextAlignment="Center"
+                               VerticalAlignment="Center"
+                               HorizontalAlignment="Center"
+                               Margin="10"
+                               Visibility="Collapsed"/>
+
                     <Button x:Name="AddModpackButton"
                             Grid.Row="2"
-                            Content="+ Добавить сборку"
+                            Content="+ Добавить pasyotpack"
                             Style="{StaticResource SecondaryButtonStyle}"
                             Height="32"
                             Margin="0,8,0,0"
@@ -262,5 +296,12 @@
             </StackPanel>
         </Grid>
         <Frame x:Name="MainFrame" Content="Frame" Grid.RowSpan="3" NavigationUIVisibility="Hidden"/>
+
+        <StackPanel x:Name="ToastHost"
+                    Grid.RowSpan="3"
+                    VerticalAlignment="Bottom"
+                    HorizontalAlignment="Right"
+                    Margin="0,0,20,20"
+                    Width="320"/>
     </Grid>
 </Window>

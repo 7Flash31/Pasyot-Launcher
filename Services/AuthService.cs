@@ -10,6 +10,12 @@ namespace Pasyot_Launcher.Services
 
         public static bool IsLoggedIn => !string.IsNullOrEmpty(AccessToken);
 
+        public static void RestoreTokens(string accessToken, string refreshToken)
+        {
+            AccessToken = accessToken;
+            RefreshToken = refreshToken;
+        }
+
         public static void SaveSession(string accessToken, string refreshToken, UserProfile profile)
         {
             AccessToken = accessToken;
@@ -21,6 +27,15 @@ namespace Pasyot_Launcher.Services
                 AccessToken = accessToken,
                 RefreshToken = refreshToken
             });
+        }
+
+        public static void Logout()
+        {
+            AccessToken = string.Empty;
+            RefreshToken = string.Empty;
+            CurrentUser = null;
+
+            SecureStorage.ClearSession();
         }
     }
 }

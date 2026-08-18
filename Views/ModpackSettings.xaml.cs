@@ -8,14 +8,14 @@ namespace Pasyot_Launcher.Views
     {
         private readonly AppSettings _settings;
 
-        public ModpackSettings() : this(AppSettings.Load())
+        public ModpackSettings() : this(AppSettings.Instance)
         {
         }
 
         public ModpackSettings(AppSettings settings)
         {
             InitializeComponent();
-            _settings = settings ?? AppSettings.Load();
+            _settings = settings ?? AppSettings.Instance;
             InitializeRamSlider();
             LoadSettings();
         }
@@ -50,22 +50,32 @@ namespace Pasyot_Launcher.Views
             }
         }
 
+        private void CancelButton_Click(object sender, RoutedEventArgs e)
+        {
+            Close();
+        }
+
         private void SaveButton_Click(object sender, RoutedEventArgs e)
         {
-            _settings.ProfilesPath = ProfilesPathTextBox.Text;
-            _settings.RamMb = (int)RamSlider.Value;
-            _settings.ServerUrl = ServerUrlTextBox.Text;
-            _settings.JavaArgs = JavaArgsTextBox.Text;
-            _settings.EnvVars = EnvVarsTextBox.Text;
-            _settings.Save();
-
             try
             {
-                DialogResult = true;
-            }
-            catch (InvalidOperationException)
-            {
+                _settings.ProfilesPath = ProfilesPathTextBox.Text;
+                _settings.RamMb = (int)Math.Round(RamSlider.Value);
+                _settings.ServerUrl = ServerUrlTextBox.Text;
+                _settings.JavaArgs = JavaArgsTextBox.Text;
+                _settings.EnvVars = EnvVarsTextBox.Text;
+
+                _settings.Save();
+
                 Close();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    $"Ошибка сохранения настроек:\n\n{ex}",
+                    "Ошибка",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
             }
         }
     }

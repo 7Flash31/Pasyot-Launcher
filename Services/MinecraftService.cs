@@ -23,9 +23,9 @@ namespace Pasyot_Launcher.Services
             _httpClient = httpClient;
         }
 
-        public async Task LaunchAsync(PasyotPack pack, AppSettings settings, string playerName, string loader, IProgress<SyncProgressReport>? progress = null)
+        public async Task<Process> LaunchAsync(PasyotPack pack, AppSettings settings, string playerName, string? loader, string? minecraftVersion, IProgress<SyncProgressReport>? progress = null)
         {
-            string gameDirectory = Path.Combine(settings.ProfilesPath, pack.Modpack);
+            string gameDirectory = Path.Combine(settings.ProfilesPath, pack.Name);
             var path = new MinecraftPath(gameDirectory);
             var launcher = new MinecraftLauncher(path);
 
@@ -54,7 +54,13 @@ namespace Pasyot_Launcher.Services
                 }
             };
 
-            string mcVersion = "1.20.1";
+            string? mcVersion = !string.IsNullOrWhiteSpace(minecraftVersion) ? minecraftVersion : pack.Minecraft;
+            if (string.IsNullOrWhiteSpace(mcVersion))
+            {
+                throw new InvalidOperationException(
+                    $"Для сборки «{pack.Name}» не указана версия Minecraft. Обновите .pasyotpack или задайте minecraft у сборки на сервере.");
+            }
+
             string versionName = mcVersion;
             string loaderType = (loader ?? pack.Loader ?? "").ToLower().Trim();
 
@@ -102,6 +108,7 @@ namespace Pasyot_Launcher.Services
             progress?.Report(new SyncProgressReport { Status = "Запуск Minecraft...", Percentage = 100 });
             Process process = await launcher.BuildProcessAsync(versionName, launchOptions);
             process.Start();
+            return process;
         }
     }
 }

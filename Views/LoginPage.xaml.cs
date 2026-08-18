@@ -27,13 +27,24 @@ namespace Pasyot_Launcher
 
         private async void LoginBtn_Click(object sender, RoutedEventArgs e)
         {
+            LoginBtn.IsEnabled = false;
+            LoginBtn.Content = "Ожидание авторизации...";
+            LoginStatusText.Visibility = Visibility.Visible;
+
             try
             {
                 await VedrowAuth.StartAuthAsync();
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Error: {ex.Message}");
+                (Application.Current.MainWindow as MainWindow)?.ShowToast(
+                    $"Ошибка авторизации: {ex.Message}", ToastType.Error, ex.ToString());
+            }
+            finally
+            {
+                LoginBtn.IsEnabled = true;
+                LoginBtn.Content = "Войти через Vedrow";
+                LoginStatusText.Visibility = Visibility.Collapsed;
             }
         }
     }

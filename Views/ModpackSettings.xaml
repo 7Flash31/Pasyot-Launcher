@@ -6,7 +6,8 @@
         mc:Ignorable="d"
         Title="Настройки" Height="705" Width="600"
         Background="#1E1E1E" Foreground="White"
-        WindowStartupLocation="CenterOwner">
+        WindowStartupLocation="CenterOwner"
+        Icon="/Resources/app.ico">
 
     <Window.Resources>
         <Style x:Key="PlaceholderTextBoxStyle" TargetType="TextBox">
@@ -137,6 +138,30 @@
                 </Setter.Value>
             </Setter>
         </Style>
+
+        <Style x:Key="PrimaryButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="#007ACC"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="border" Background="{TemplateBinding Background}" CornerRadius="6">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#0098FF"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#005A9E"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </Window.Resources>
 
     <Grid Margin="20">
@@ -248,14 +273,27 @@
                 </StackPanel>
             </Border>
 
-            <Button Content="Сохранить настройки" 
-                    Click="SaveButton_Click" 
-                    Height="40" 
-                    Background="#007ACC" 
-                    Foreground="White" 
-                    FontWeight="Bold" 
-                    BorderThickness="0" 
-                    Cursor="Hand"/>
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <Button Grid.Column="0"
+                        Content="Отмена"
+                        Click="CancelButton_Click"
+                        Style="{StaticResource BrowseButtonStyle}"
+                        Height="40" Width="110"
+                        Cursor="Hand"/>
+
+                <Button Grid.Column="1"
+                        Content="Сохранить настройки"
+                        Click="SaveButton_Click"
+                        Style="{StaticResource PrimaryButtonStyle}"
+                        Height="40"
+                        Margin="10,0,0,0"
+                        Cursor="Hand"/>
+            </Grid>
         </StackPanel>
     </Grid>
 </Window>

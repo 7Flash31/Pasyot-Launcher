@@ -1,5 +1,4 @@
-﻿using Pasyot_Launcher.Models;
-using Pasyot_Launcher.Services;
+﻿using Pasyot_Launcher.Services;
 using System.Windows;
 
 namespace Pasyot_Launcher
@@ -13,7 +12,7 @@ namespace Pasyot_Launcher
             UserSession? session = SecureStorage.LoadSession();
             if (session != null)
             {
-                AuthService.SaveSession(session.AccessToken, session.RefreshToken, new UserProfile());
+                AuthService.RestoreTokens(session.AccessToken, session.RefreshToken);
             }
         }
     }

@@ -21,11 +21,14 @@ namespace Pasyot_Launcher.Views
 {
     public partial class AddModpackWindow : Window
     {
+        private readonly HashSet<string> _existingSlugs;
+
         public PasyotPack? SelectedPack { get; private set; }
 
-        public AddModpackWindow()
+        public AddModpackWindow(IEnumerable<string>? existingSlugs = null)
         {
             InitializeComponent();
+            _existingSlugs = new HashSet<string>(existingSlugs ?? Enumerable.Empty<string>());
         }
 
         private void BrowseButton_Click(object sender, RoutedEventArgs e)
@@ -46,7 +49,8 @@ namespace Pasyot_Launcher.Views
 
                 PackPathTextBox.Text = dialog.FileName;
                 ModpackNameText.Text = pack.Name;
-                ModpackSlugText.Text = pack.Modpack;
+                ModpackLoaderText.Text = string.IsNullOrWhiteSpace(pack.Loader) ? "—" : pack.Loader;
+                ModpackMinecraftText.Text = string.IsNullOrWhiteSpace(pack.Minecraft) ? "—" : pack.Minecraft;
                 ModpackVersionText.Text = pack.Version.ToString();
                 ModpackServerText.Text = pack.Server;
 
@@ -87,20 +91,20 @@ namespace Pasyot_Launcher.Views
             if (pack.Format <= 0)
                 throw new Exception("Неподдерживаемая или отсутствующая версия format");
 
-            if (string.IsNullOrWhiteSpace(pack.Modpack))
-                throw new Exception("В файле отсутствует поле modpack");
+            if (string.IsNullOrWhiteSpace(pack.Name))
+                throw new Exception("В файле отсутствует поле name");
 
-            if (string.IsNullOrWhiteSpace(pack.ManifestUrl))
-                throw new Exception("В файле отсутствует поле manifest_url");
+            if (_existingSlugs.Contains(pack.Name))
+                throw new Exception($"Сборка \"{pack.Name}\" уже добавлена в лаунчер");
+
+            if (string.IsNullOrWhiteSpace(pack.Manifest))
+                throw new Exception("В файле отсутствует поле manifest");
 
             if (string.IsNullOrWhiteSpace(pack.Server))
                 throw new Exception("В файле отсутствует поле server");
 
             if (pack.Version <= 0)
                 throw new Exception("Некорректный номер версии");
-
-            if (string.IsNullOrWhiteSpace(pack.Name))
-                pack.Name = pack.Modpack;
 
             return pack;
         }
@@ -109,7 +113,8 @@ namespace Pasyot_Launcher.Views
         {
             PackPathTextBox.Text = "Файл не выбран";
             ModpackNameText.Text = "—";
-            ModpackSlugText.Text = "—";
+            ModpackLoaderText.Text = "—";
+            ModpackMinecraftText.Text = "—";
             ModpackVersionText.Text = "—";
             ModpackServerText.Text = "—";
             InfoPanel.Visibility = Visibility.Collapsed;

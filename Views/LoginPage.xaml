@@ -44,18 +44,28 @@
                 VerticalAlignment="Center">
 
             <StackPanel>
-                <TextBlock Text="Авторизация" 
-                           FontSize="22" 
-                           FontWeight="Bold" 
-                           Margin="0,0,0,20" 
+                <TextBlock Text="Авторизация"
+                           FontSize="22"
+                           FontWeight="Bold"
+                           Margin="0,0,0,6"
                            HorizontalAlignment="Center"/>
 
-                <Button x:Name="LoginBtn" 
-                        Content="Войти через Vedrow" 
-                        Height="42" 
-                        Style="{StaticResource LaunchButtonStyle}" 
+                <Button x:Name="LoginBtn"
+                        Content="Войти через Vedrow"
+                        Height="42"
+                        Style="{StaticResource LaunchButtonStyle}"
                         Click="LoginBtn_Click"
                         Cursor="Hand"/>
+
+                <TextBlock x:Name="LoginStatusText"
+                           Text="Открываем браузер для авторизации..."
+                           FontSize="11"
+                           Foreground="#888888"
+                           TextWrapping="Wrap"
+                           TextAlignment="Center"
+                           HorizontalAlignment="Center"
+                           Margin="0,12,0,0"
+                           Visibility="Collapsed"/>
             </StackPanel>
         </Border>
 
