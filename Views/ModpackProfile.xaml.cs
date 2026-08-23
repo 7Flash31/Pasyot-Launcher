@@ -44,7 +44,6 @@ namespace Pasyot_Launcher.Views
 
         public void SetSelected(bool isSelected)
         {
-            // Margin компенсирует толщину рамки, чтобы карточка не "прыгала" в списке при выборе.
             CardBorder.BorderBrush = isSelected ? SelectedBorderBrush : Brushes.Transparent;
             CardBorder.BorderThickness = isSelected ? new Thickness(2) : new Thickness(0);
             CardBorder.Margin = isSelected ? new Thickness(2) : new Thickness(4);

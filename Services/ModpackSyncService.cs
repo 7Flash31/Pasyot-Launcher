@@ -2,18 +2,24 @@ using Pasyot_Launcher.Models;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Formats.Tar;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Pasyot_Launcher.Services
 {
     public class ModpackSyncService
     {
+        private const int MaxParallelDownloads = 8;
+        private const int CopyBufferSize = 81920;
+
         private readonly HttpClient _httpClient;
 
         public ModpackSyncService(HttpClient httpClient)
@@ -27,17 +33,90 @@ namespace Pasyot_Launcher.Services
             public double Percentage { get; set; }
         }
 
+        private sealed class SyncProgressState
+        {
+            private readonly long _totalBytes;
+            private readonly int _totalFiles;
+            private readonly IProgress<SyncProgressReport>? _progress;
+            private long _downloadedBytes;
+            private int _completedFiles;
+            private long _lastReportTicks;
+
+            public SyncProgressState(long totalBytes, int totalFiles, IProgress<SyncProgressReport>? progress)
+            {
+                _totalBytes = totalBytes;
+                _totalFiles = totalFiles;
+                _progress = progress;
+            }
+
+            public void ReportBytes(string fileName, long delta)
+            {
+                long downloaded = Interlocked.Add(ref _downloadedBytes, delta);
+
+                long nowTicks = Environment.TickCount64;
+                long lastTicks = Interlocked.Read(ref _lastReportTicks);
+                if (nowTicks - lastTicks < 100) return;
+                if (Interlocked.CompareExchange(ref _lastReportTicks, nowTicks, lastTicks) != lastTicks) return;
+
+                double percent = _totalBytes > 0 ? (double)downloaded / _totalBytes * 100 : 0;
+                _progress?.Report(new SyncProgressReport
+                {
+                    Status = $"Загрузка ({Volatile.Read(ref _completedFiles)}/{_totalFiles}): {fileName}",
+                    Percentage = Math.Min(percent, 100)
+                });
+            }
+
+            public void ReportFileDone(string fileName)
+            {
+                int completed = Interlocked.Increment(ref _completedFiles);
+                _progress?.Report(new SyncProgressReport
+                {
+                    Status = $"Загружено ({completed}/{_totalFiles}): {fileName}",
+                    Percentage = _totalBytes > 0 ? (double)Interlocked.Read(ref _downloadedBytes) / _totalBytes * 100 : (double)completed / _totalFiles * 100
+                });
+            }
+        }
+
         public static string ResolveManifestUrl(PasyotPack pack)
         {
             if (!string.IsNullOrWhiteSpace(pack.Manifest))
-                return pack.Manifest;
+                return ResolveAbsoluteUrl(pack, pack.Manifest, "манифеста");
 
-            return $"{pack.Server.TrimEnd('/')}/modpacks/{pack.Name}/manifest";
+            return ResolveAbsoluteUrl(pack, $"{RequireServer(pack)}/modpacks/{pack.Name}/manifest", "манифеста");
+        }
+
+        private static string RequireServer(PasyotPack pack)
+        {
+            if (string.IsNullOrWhiteSpace(pack.Server) || !Uri.TryCreate(pack.Server, UriKind.Absolute, out _))
+            {
+                throw new InvalidOperationException(
+                    $"У сборки «{pack.Name}» не задан или некорректен адрес сервера (server: «{pack.Server}»).");
+            }
+
+            return pack.Server.TrimEnd('/');
+        }
+
+        private static string ResolveAbsoluteUrl(PasyotPack pack, string value, string what)
+        {
+            string trimmed = value.Trim();
+            if (Uri.TryCreate(trimmed, UriKind.Absolute, out _))
+                return trimmed;
+
+            if (!string.IsNullOrWhiteSpace(pack.Server) &&
+                Uri.TryCreate(pack.Server, UriKind.Absolute, out var serverUri) &&
+                Uri.TryCreate(serverUri, trimmed.TrimStart('/'), out var combined))
+            {
+                return combined.ToString();
+            }
+
+            throw new InvalidOperationException(
+                $"Некорректный адрес {what} у сборки «{pack.Name}»: «{value}» — это не полный URL (https://...), " +
+                "и его не удалось объединить с адресом сервера.");
         }
 
         public async Task<int?> GetLatestVersionAsync(PasyotPack pack)
         {
-            string url = $"{pack.Server.TrimEnd('/')}/modpacks/{pack.Name}";
+            string url = $"{RequireServer(pack)}/modpacks/{pack.Name}";
             var summary = await _httpClient.GetFromJsonAsync<ModpackSummary>(url);
             return summary?.LatestVersion;
         }
@@ -55,100 +134,82 @@ namespace Pasyot_Launcher.Services
             if (manifest == null || manifest.Files == null) return null;
 
             string modpackDir = Path.Combine(profilesPath, pack.Name);
-            int totalFiles = manifest.Files.Count;
-            int processedFiles = 0;
-            var missingFiles = new List<string>();
+            Directory.CreateDirectory(modpackDir);
 
-            foreach (var file in manifest.Files)
+            var pending = manifest.Files
+                .Where(file => !IsUpToDate(modpackDir, file))
+                .ToList();
+
+            if (pending.Count == 0)
             {
-                processedFiles++;
-                double basePercent = totalFiles > 0 ? ((double)(processedFiles - 1) / totalFiles) * 100 : 0;
-                string fileName = Path.GetFileName(file.Path);
+                CleanupRemovedFiles(modpackDir, manifest);
+                progress?.Report(new SyncProgressReport { Status = "Завершено", Percentage = 100 });
+                return manifest;
+            }
 
-                string destinationPath = Path.Combine(modpackDir, file.Path);
+            if (manifest.Bundle != null && pending.Any(f => f.Bundled))
+            {
+                progress?.Report(new SyncProgressReport { Status = "Загрузка общего пакета мелких файлов...", Percentage = 0 });
+                await TryApplyBundleAsync(pack, manifest.Bundle, modpackDir, pending);
+                pending.RemoveAll(f => IsUpToDate(modpackDir, f));
+            }
 
-                if (File.Exists(destinationPath) && CalculateSha256(destinationPath).Equals(file.Sha256, StringComparison.OrdinalIgnoreCase))
+            if (pending.Count == 0)
+            {
+                CleanupRemovedFiles(modpackDir, manifest);
+                progress?.Report(new SyncProgressReport { Status = "Завершено", Percentage = 100 });
+                return manifest;
+            }
+
+            long totalBytes = pending.Sum(f => f.Size);
+            var state = new SyncProgressState(totalBytes, pending.Count, progress);
+            var missingFiles = new List<string>();
+            var missingLock = new object();
+            int manifestStale = 0;
+            using var cts = new CancellationTokenSource();
+            using var semaphore = new SemaphoreSlim(MaxParallelDownloads);
+
+            var downloadTasks = pending.Select(file => Task.Run(async () =>
+            {
+                try
                 {
-                    progress?.Report(new SyncProgressReport
-                    {
-                        Status = $"Пропущен ({processedFiles}/{totalFiles}): {fileName}",
-                        Percentage = ((double)processedFiles / totalFiles) * 100
-                    });
-                    continue;
+                    await semaphore.WaitAsync(cts.Token).ConfigureAwait(false);
                 }
-
-                Directory.CreateDirectory(Path.GetDirectoryName(destinationPath)!);
-
-                string fileUrl = BuildFileUrl(pack.Server.TrimEnd('/'), file);
-                string tempPath = destinationPath + ".tmp";
+                catch (OperationCanceledException)
+                {
+                    return;
+                }
 
                 try
                 {
-                    progress?.Report(new SyncProgressReport
-                    {
-                        Status = $"Загрузка ({processedFiles}/{totalFiles}): {fileName}",
-                        Percentage = basePercent
-                    });
-
-                    using (var response = await _httpClient.GetAsync(fileUrl, HttpCompletionOption.ResponseHeadersRead))
-                    {
-                        response.EnsureSuccessStatusCode();
-
-                        long? totalBytes = response.Content.Headers.ContentLength;
-                        using var downloadStream = await response.Content.ReadAsStreamAsync();
-                        using (var fileStream = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None, 8192, true))
-                        {
-                            var buffer = new byte[8192];
-                            long totalReadBytes = 0;
-                            int bytesRead;
-
-                            while ((bytesRead = await downloadStream.ReadAsync(buffer, 0, buffer.Length)) > 0)
-                            {
-                                await fileStream.WriteAsync(buffer, 0, bytesRead);
-                                totalReadBytes += bytesRead;
-
-                                if (totalBytes.HasValue && totalBytes.Value > 0)
-                                {
-                                    double fileProgress = (double)totalReadBytes / totalBytes.Value;
-                                    double currentOverallPercent = basePercent + (fileProgress * (100.0 / Math.Max(totalFiles, 1)));
-
-                                    string sizeInfo = $"{totalReadBytes / 1024 / 1024}MB / {totalBytes.Value / 1024 / 1024}MB";
-
-                                    progress?.Report(new SyncProgressReport
-                                    {
-                                        Status = $"Загрузка ({processedFiles}/{totalFiles}): {fileName} ({sizeInfo})",
-                                        Percentage = currentOverallPercent
-                                    });
-                                }
-                            }
-                        }
-                    }
-
-                    string downloadedHash = CalculateSha256(tempPath);
-                    if (!downloadedHash.Equals(file.Sha256, StringComparison.OrdinalIgnoreCase))
-                    {
-                        File.Delete(tempPath);
-                        throw new IOException($"Хэш файла {fileName} не совпал после загрузки — файл повреждён");
-                    }
-
-                    File.Move(tempPath, destinationPath, overwrite: true);
+                    await DownloadFileAsync(pack, modpackDir, file, state, cts.Token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (cts.IsCancellationRequested)
+                {
                 }
                 catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
                 {
-                    TryDeleteTemp(tempPath);
-
                     if (allowManifestRetry)
                     {
-                        return await SyncAsync(pack, profilesPath, progress, allowManifestRetry: false);
+                        Interlocked.Exchange(ref manifestStale, 1);
+                        cts.Cancel();
                     }
-
-                    missingFiles.Add(fileName);
+                    else
+                    {
+                        lock (missingLock) missingFiles.Add(Path.GetFileName(file.Path));
+                    }
                 }
-                catch
+                finally
                 {
-                    TryDeleteTemp(tempPath);
-                    throw;
+                    semaphore.Release();
                 }
+            })).ToArray();
+
+            await Task.WhenAll(downloadTasks).ConfigureAwait(false);
+
+            if (Volatile.Read(ref manifestStale) == 1)
+            {
+                return await SyncAsync(pack, profilesPath, progress, allowManifestRetry: false).ConfigureAwait(false);
             }
 
             if (missingFiles.Count > 0)
@@ -160,6 +221,110 @@ namespace Pasyot_Launcher.Services
 
             progress?.Report(new SyncProgressReport { Status = "Завершено", Percentage = 100 });
             return manifest;
+        }
+
+        private bool IsUpToDate(string modpackDir, ManifestFile file)
+        {
+            string destinationPath = Path.Combine(modpackDir, file.Path);
+            return File.Exists(destinationPath) &&
+                   CalculateSha256(destinationPath).Equals(file.Sha256, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private async Task DownloadFileAsync(PasyotPack pack, string modpackDir, ManifestFile file, SyncProgressState state, CancellationToken ct)
+        {
+            string fileName = Path.GetFileName(file.Path);
+            string destinationPath = Path.Combine(modpackDir, file.Path);
+            Directory.CreateDirectory(Path.GetDirectoryName(destinationPath)!);
+
+            string fileUrl = BuildFileUrl(pack, file);
+            string tempPath = destinationPath + ".tmp";
+
+            try
+            {
+                using (var response = await _httpClient.GetAsync(fileUrl, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false))
+                {
+                    response.EnsureSuccessStatusCode();
+
+                    using var downloadStream = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+                    using var fileStream = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None, CopyBufferSize, true);
+
+                    var buffer = new byte[CopyBufferSize];
+                    int bytesRead;
+                    while ((bytesRead = await downloadStream.ReadAsync(buffer, ct).ConfigureAwait(false)) > 0)
+                    {
+                        await fileStream.WriteAsync(buffer.AsMemory(0, bytesRead), ct).ConfigureAwait(false);
+                        state.ReportBytes(fileName, bytesRead);
+                    }
+                }
+
+                string downloadedHash = CalculateSha256(tempPath);
+                if (!downloadedHash.Equals(file.Sha256, StringComparison.OrdinalIgnoreCase))
+                {
+                    File.Delete(tempPath);
+                    throw new IOException($"Хэш файла {fileName} не совпал после загрузки — файл повреждён");
+                }
+
+                File.Move(tempPath, destinationPath, overwrite: true);
+                state.ReportFileDone(fileName);
+            }
+            catch
+            {
+                TryDeleteTemp(tempPath);
+                throw;
+            }
+        }
+
+        private async Task TryApplyBundleAsync(PasyotPack pack, ManifestBundle bundle, string modpackDir, List<ManifestFile> pending)
+        {
+            if (!string.Equals(bundle.Format, "tar+gzip", StringComparison.OrdinalIgnoreCase))
+                return;
+
+            string tempArchive = Path.Combine(Path.GetTempPath(), $"pasyot-bundle-{Guid.NewGuid():N}.tar.gz");
+            string tempExtractDir = Path.Combine(Path.GetTempPath(), $"pasyot-bundle-{Guid.NewGuid():N}");
+
+            try
+            {
+                string bundleUrl = ResolveAbsoluteUrl(pack, bundle.Url, "бандла");
+
+                using (var response = await _httpClient.GetAsync(bundleUrl, HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false))
+                {
+                    response.EnsureSuccessStatusCode();
+                    using var downloadStream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
+                    using var fileStream = new FileStream(tempArchive, FileMode.Create, FileAccess.Write, FileShare.None, CopyBufferSize, true);
+                    await downloadStream.CopyToAsync(fileStream).ConfigureAwait(false);
+                }
+
+                if (!string.IsNullOrWhiteSpace(bundle.Sha256) &&
+                    !CalculateSha256(tempArchive).Equals(bundle.Sha256, StringComparison.OrdinalIgnoreCase))
+                {
+                    return;
+                }
+
+                Directory.CreateDirectory(tempExtractDir);
+                using (var gzip = new GZipStream(File.OpenRead(tempArchive), CompressionMode.Decompress))
+                {
+                    await TarFile.ExtractToDirectoryAsync(gzip, tempExtractDir, overwriteFiles: true).ConfigureAwait(false);
+                }
+
+                foreach (var file in pending.Where(f => f.Bundled).ToList())
+                {
+                    string extractedPath = Path.Combine(tempExtractDir, file.Path.Replace('/', Path.DirectorySeparatorChar));
+                    if (!File.Exists(extractedPath)) continue;
+                    if (!CalculateSha256(extractedPath).Equals(file.Sha256, StringComparison.OrdinalIgnoreCase)) continue;
+
+                    string destinationPath = Path.Combine(modpackDir, file.Path);
+                    Directory.CreateDirectory(Path.GetDirectoryName(destinationPath)!);
+                    File.Move(extractedPath, destinationPath, overwrite: true);
+                }
+            }
+            catch
+            {
+            }
+            finally
+            {
+                TryDeleteTemp(tempArchive);
+                try { if (Directory.Exists(tempExtractDir)) Directory.Delete(tempExtractDir, true); } catch { }
+            }
         }
 
         private static void CleanupRemovedFiles(string modpackDir, ManifestModel manifest)
@@ -197,12 +362,12 @@ namespace Pasyot_Launcher.Services
             catch { }
         }
 
-        private static string BuildFileUrl(string baseUrl, ManifestFile file)
+        private static string BuildFileUrl(PasyotPack pack, ManifestFile file)
         {
             if (!string.IsNullOrWhiteSpace(file.Url))
-                return file.Url;
+                return ResolveAbsoluteUrl(pack, file.Url, $"файла {file.Path}");
 
-            return $"{baseUrl}/objects/{file.Sha256}";
+            return ResolveAbsoluteUrl(pack, $"{RequireServer(pack)}/objects/{file.Sha256}", $"файла {file.Path}");
         }
 
         private string CalculateSha256(string filePath)

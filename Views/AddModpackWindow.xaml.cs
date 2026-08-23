@@ -103,6 +103,13 @@ namespace Pasyot_Launcher.Views
             if (string.IsNullOrWhiteSpace(pack.Server))
                 throw new Exception("В файле отсутствует поле server");
 
+            if (!Uri.TryCreate(pack.Server, UriKind.Absolute, out _))
+                throw new Exception($"Поле server имеет некорректный адрес: «{pack.Server}» — это должен быть полный URL (https://...)");
+
+            if (!Uri.TryCreate(pack.Manifest, UriKind.Absolute, out _) &&
+                !Uri.TryCreate(new Uri(pack.Server), pack.Manifest.TrimStart('/'), out _))
+                throw new Exception($"Поле manifest имеет некорректный адрес: «{pack.Manifest}»");
+
             if (pack.Version <= 0)
                 throw new Exception("Некорректный номер версии");
 

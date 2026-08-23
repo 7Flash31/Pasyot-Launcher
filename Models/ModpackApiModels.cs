@@ -7,7 +7,6 @@ using System.Threading.Tasks;
 
 namespace Pasyot_Launcher.Models
 {
-    // GET /modpacks GET /modpacks/{name}
     public class ModpackSummary
     {
         [JsonPropertyName("name")]
@@ -44,7 +43,6 @@ namespace Pasyot_Launcher.Models
         public long Bytes { get; set; }
     }
 
-    // GET /modpacks/{name}/manifest
     public class ManifestModel
     {
         [JsonPropertyName("format")]
@@ -77,8 +75,32 @@ namespace Pasyot_Launcher.Models
         [JsonPropertyName("created_at")]
         public string? CreatedAt { get; set; }
 
+        [JsonPropertyName("bundle")]
+        public ManifestBundle? Bundle { get; set; }
+
         [JsonPropertyName("files")]
         public List<ManifestFile> Files { get; set; } = new();
+    }
+
+    public class ManifestBundle
+    {
+        [JsonPropertyName("format")]
+        public string Format { get; set; } = "";
+
+        [JsonPropertyName("sha256")]
+        public string Sha256 { get; set; } = "";
+
+        [JsonPropertyName("size")]
+        public long Size { get; set; }
+
+        [JsonPropertyName("files")]
+        public int Files { get; set; }
+
+        [JsonPropertyName("bytes")]
+        public long Bytes { get; set; }
+
+        [JsonPropertyName("url")]
+        public string Url { get; set; } = "";
     }
 
     public class ManifestFile
@@ -100,5 +122,8 @@ namespace Pasyot_Launcher.Models
 
         [JsonPropertyName("url")]
         public string Url { get; set; } = "";
+
+        [JsonPropertyName("bundled")]
+        public bool Bundled { get; set; }
     }
 }
