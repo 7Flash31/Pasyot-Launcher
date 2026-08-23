@@ -1,6 +1,7 @@
 ﻿using CmlLib.Core;
 using CmlLib.Core.Auth;
 using CmlLib.Core.Installer.Forge;
+using CmlLib.Core.Installers;
 using CmlLib.Core.ModLoaders.FabricMC;
 using CmlLib.Core.ProcessBuilder;
 using Pasyot_Launcher.Models;
@@ -16,6 +17,10 @@ namespace Pasyot_Launcher.Services
 {
     public class MinecraftService
     {
+        private const int MaxDownloaderThreads = 16;
+        private const int MaxCheckerThreads = 4;
+        private const int DownloaderBoundedCapacity = 2048;
+
         private readonly HttpClient _httpClient;
 
         public MinecraftService(HttpClient httpClient)
@@ -27,7 +32,11 @@ namespace Pasyot_Launcher.Services
         {
             string gameDirectory = Path.Combine(settings.ProfilesPath, pack.Name);
             var path = new MinecraftPath(gameDirectory);
-            var launcher = new MinecraftLauncher(path);
+
+            var launcherParameters = MinecraftLauncherParameters.CreateDefault(path, _httpClient);
+            launcherParameters.GameInstaller = new ParallelGameInstaller(MaxCheckerThreads, MaxDownloaderThreads, DownloaderBoundedCapacity, _httpClient);
+
+            var launcher = new MinecraftLauncher(launcherParameters);
 
             launcher.FileProgressChanged += (sender, e) =>
             {

@@ -58,7 +58,7 @@
                         Cursor="Hand"/>
 
                 <TextBlock x:Name="LoginStatusText"
-                           Text="Открываем браузер для авторизации..."
+                           Text="Открытие браузера для авторизации..."
                            FontSize="11"
                            Foreground="#888888"
                            TextWrapping="Wrap"

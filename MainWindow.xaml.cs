@@ -3,6 +3,7 @@ using Pasyot_Launcher.Services;
 using Pasyot_Launcher.Views;
 using System;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Threading.Tasks;
@@ -222,6 +223,7 @@ namespace Pasyot_Launcher
             try
             {
                 LaunchMinecraftBtn.IsEnabled = false;
+                VerifyFilesButton.IsEnabled = false;
 
                 DownloadProgressPanel.Visibility = Visibility.Visible;
                 FileProgressBar.Value = 0;
@@ -239,7 +241,16 @@ namespace Pasyot_Launcher
                     }
                 });
 
-                var manifest = await _syncService.SyncAsync(_selectedModpack.PackData, _appSettings.ProfilesPath, progress);
+                ManifestModel? manifest;
+                try
+                {
+                    manifest = await _syncService.SyncAsync(_selectedModpack.PackData, _appSettings.ProfilesPath, progress);
+                }
+                catch (HttpRequestException) when (_syncService.IsInstalled(_selectedModpack.PackData.Name, _appSettings.ProfilesPath))
+                {
+                    manifest = null;
+                    ShowToast("Нет соединения с сервером — запуск офлайн на уже установленных файлах", ToastType.Info);
+                }
 
                 if (manifest != null)
                 {
@@ -286,6 +297,101 @@ namespace Pasyot_Launcher
             {
                 DownloadProgressPanel.Visibility = Visibility.Collapsed;
                 LaunchMinecraftBtn.IsEnabled = true;
+                VerifyFilesButton.IsEnabled = true;
+            }
+        }
+
+        private void OpenModpackFolderButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_selectedModpack == null)
+            {
+                ShowToast("Выберите сборку из списка!", ToastType.Info);
+                return;
+            }
+
+            string modpackDir = Path.Combine(_appSettings.ProfilesPath, _selectedModpack.PackData.Name);
+
+            if (!Directory.Exists(modpackDir))
+            {
+                ShowToast("Сборка ещё не установлена — папки не существует", ToastType.Info);
+                return;
+            }
+
+            try
+            {
+                Process.Start(new ProcessStartInfo(modpackDir) { UseShellExecute = true });
+            }
+            catch (Exception ex)
+            {
+                ShowToast($"Не удалось открыть папку: {ex.Message}", ToastType.Error, ex.ToString());
+            }
+        }
+
+        private async void VerifyFilesButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_selectedModpack == null)
+            {
+                ShowToast("Выберите сборку из списка!", ToastType.Info);
+                return;
+            }
+
+            var pack = _selectedModpack.PackData;
+
+            if (!_syncService.IsInstalled(pack.Name, _appSettings.ProfilesPath))
+            {
+                ShowToast("Сборка ещё не установлена — сначала запустите её", ToastType.Info);
+                return;
+            }
+
+            try
+            {
+                LaunchMinecraftBtn.IsEnabled = false;
+                VerifyFilesButton.IsEnabled = false;
+
+                DownloadProgressPanel.Visibility = Visibility.Visible;
+                FileProgressBar.Value = 0;
+                StatusTextBlock.Text = "Подготовка...";
+                ProgressPercentTextBlock.Text = "0%";
+
+                var progress = new Progress<SyncProgressReport>(report =>
+                {
+                    FileProgressBar.Value = report.Percentage;
+                    ProgressPercentTextBlock.Text = $"{Math.Round(report.Percentage)}%";
+
+                    if (!string.IsNullOrEmpty(report.Status))
+                    {
+                        StatusTextBlock.Text = report.Status;
+                    }
+                });
+
+                var manifest = await _syncService.SyncAsync(pack, _appSettings.ProfilesPath, progress);
+
+                if (manifest != null)
+                {
+                    pack.Version = manifest.Version;
+
+                    if (!string.IsNullOrWhiteSpace(manifest.Loader))
+                        pack.Loader = manifest.Loader;
+
+                    if (!string.IsNullOrWhiteSpace(manifest.Minecraft))
+                        pack.Minecraft = manifest.Minecraft;
+
+                    _selectedModpack.Init(pack);
+                    _selectedModpack.SetUpdateAvailable(false);
+                    _appSettings.Save();
+                }
+
+                ShowToast($"Проверка «{pack.Name}» завершена — все файлы на месте", ToastType.Success);
+            }
+            catch (Exception ex)
+            {
+                ShowToast($"Ошибка при проверке файлов: {ex.Message}", ToastType.Error, ex.ToString());
+            }
+            finally
+            {
+                DownloadProgressPanel.Visibility = Visibility.Collapsed;
+                LaunchMinecraftBtn.IsEnabled = true;
+                VerifyFilesButton.IsEnabled = true;
             }
         }
 

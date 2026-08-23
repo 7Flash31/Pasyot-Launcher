@@ -1,5 +1,6 @@
 using Pasyot_Launcher.Models;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Formats.Tar;
@@ -130,15 +131,14 @@ namespace Pasyot_Launcher.Services
 
             progress?.Report(new SyncProgressReport { Status = "Получение манифеста...", Percentage = 0 });
 
-            var manifest = await _httpClient.GetFromJsonAsync<ManifestModel>(manifestUrl);
+            var manifest = await _httpClient.GetFromJsonAsync<ManifestModel>(manifestUrl).ConfigureAwait(false);
             if (manifest == null || manifest.Files == null) return null;
 
             string modpackDir = Path.Combine(profilesPath, pack.Name);
             Directory.CreateDirectory(modpackDir);
 
-            var pending = manifest.Files
-                .Where(file => !IsUpToDate(modpackDir, file))
-                .ToList();
+            progress?.Report(new SyncProgressReport { Status = "Проверка локальных файлов...", Percentage = 0 });
+            var pending = await FindPendingFilesAsync(modpackDir, manifest.Files, progress).ConfigureAwait(false);
 
             if (pending.Count == 0)
             {
@@ -149,9 +149,8 @@ namespace Pasyot_Launcher.Services
 
             if (manifest.Bundle != null && pending.Any(f => f.Bundled))
             {
-                progress?.Report(new SyncProgressReport { Status = "Загрузка общего пакета мелких файлов...", Percentage = 0 });
-                await TryApplyBundleAsync(pack, manifest.Bundle, modpackDir, pending);
-                pending.RemoveAll(f => IsUpToDate(modpackDir, f));
+                await TryApplyBundleAsync(pack, manifest.Bundle, modpackDir, pending, progress).ConfigureAwait(false);
+                pending = await FindPendingFilesAsync(modpackDir, pending, progress).ConfigureAwait(false);
             }
 
             if (pending.Count == 0)
@@ -223,6 +222,36 @@ namespace Pasyot_Launcher.Services
             return manifest;
         }
 
+        private Task<List<ManifestFile>> FindPendingFilesAsync(string modpackDir, IReadOnlyCollection<ManifestFile> files, IProgress<SyncProgressReport>? progress)
+        {
+            return Task.Run(() =>
+            {
+                var pending = new ConcurrentBag<ManifestFile>();
+                int checkedCount = 0;
+                long lastReportTicks = 0;
+
+                Parallel.ForEach(files, new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount }, file =>
+                {
+                    if (!IsUpToDate(modpackDir, file))
+                        pending.Add(file);
+
+                    int done = Interlocked.Increment(ref checkedCount);
+                    long nowTicks = Environment.TickCount64;
+                    long lastTicks = Interlocked.Read(ref lastReportTicks);
+                    if (nowTicks - lastTicks < 150) return;
+                    if (Interlocked.CompareExchange(ref lastReportTicks, nowTicks, lastTicks) != lastTicks) return;
+
+                    progress?.Report(new SyncProgressReport
+                    {
+                        Status = $"Проверка файлов ({done}/{files.Count})",
+                        Percentage = files.Count > 0 ? (double)done / files.Count * 100 : 0
+                    });
+                });
+
+                return pending.ToList();
+            });
+        }
+
         private bool IsUpToDate(string modpackDir, ManifestFile file)
         {
             string destinationPath = Path.Combine(modpackDir, file.Path);
@@ -274,7 +303,9 @@ namespace Pasyot_Launcher.Services
             }
         }
 
-        private async Task TryApplyBundleAsync(PasyotPack pack, ManifestBundle bundle, string modpackDir, List<ManifestFile> pending)
+        private static readonly TimeSpan BundleStageTimeout = TimeSpan.FromMinutes(5);
+
+        private async Task TryApplyBundleAsync(PasyotPack pack, ManifestBundle bundle, string modpackDir, List<ManifestFile> pending, IProgress<SyncProgressReport>? progress)
         {
             if (!string.Equals(bundle.Format, "tar+gzip", StringComparison.OrdinalIgnoreCase))
                 return;
@@ -282,16 +313,43 @@ namespace Pasyot_Launcher.Services
             string tempArchive = Path.Combine(Path.GetTempPath(), $"pasyot-bundle-{Guid.NewGuid():N}.tar.gz");
             string tempExtractDir = Path.Combine(Path.GetTempPath(), $"pasyot-bundle-{Guid.NewGuid():N}");
 
+            using var cts = new CancellationTokenSource(BundleStageTimeout);
+            CancellationToken ct = cts.Token;
+
             try
             {
                 string bundleUrl = ResolveAbsoluteUrl(pack, bundle.Url, "бандла");
 
-                using (var response = await _httpClient.GetAsync(bundleUrl, HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false))
+                using (var response = await _httpClient.GetAsync(bundleUrl, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false))
                 {
                     response.EnsureSuccessStatusCode();
-                    using var downloadStream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
+
+                    long totalBytes = bundle.Size > 0 ? bundle.Size : (response.Content.Headers.ContentLength ?? 0);
+
+                    using var downloadStream = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
                     using var fileStream = new FileStream(tempArchive, FileMode.Create, FileAccess.Write, FileShare.None, CopyBufferSize, true);
-                    await downloadStream.CopyToAsync(fileStream).ConfigureAwait(false);
+
+                    var buffer = new byte[CopyBufferSize];
+                    long readSoFar = 0;
+                    long lastReportTicks = 0;
+                    int bytesRead;
+                    while ((bytesRead = await downloadStream.ReadAsync(buffer, ct).ConfigureAwait(false)) > 0)
+                    {
+                        await fileStream.WriteAsync(buffer.AsMemory(0, bytesRead), ct).ConfigureAwait(false);
+                        readSoFar += bytesRead;
+
+                        long nowTicks = Environment.TickCount64;
+                        if (nowTicks - lastReportTicks < 100) continue;
+                        lastReportTicks = nowTicks;
+
+                        double percent = totalBytes > 0 ? Math.Min((double)readSoFar / totalBytes * 100, 100) : 0;
+                        progress?.Report(new SyncProgressReport
+                        {
+                            Status = $"Загрузка общего пакета мелких файлов ({readSoFar / 1024 / 1024}МБ" +
+                                      (totalBytes > 0 ? $" / {totalBytes / 1024 / 1024}МБ" : "") + ")",
+                            Percentage = percent
+                        });
+                    }
                 }
 
                 if (!string.IsNullOrWhiteSpace(bundle.Sha256) &&
@@ -300,10 +358,12 @@ namespace Pasyot_Launcher.Services
                     return;
                 }
 
+                progress?.Report(new SyncProgressReport { Status = "Распаковка общего пакета мелких файлов...", Percentage = 100 });
+
                 Directory.CreateDirectory(tempExtractDir);
                 using (var gzip = new GZipStream(File.OpenRead(tempArchive), CompressionMode.Decompress))
                 {
-                    await TarFile.ExtractToDirectoryAsync(gzip, tempExtractDir, overwriteFiles: true).ConfigureAwait(false);
+                    await TarFile.ExtractToDirectoryAsync(gzip, tempExtractDir, overwriteFiles: true, ct).ConfigureAwait(false);
                 }
 
                 foreach (var file in pending.Where(f => f.Bundled).ToList())
