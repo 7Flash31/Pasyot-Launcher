@@ -321,6 +321,24 @@ namespace Pasyot_Launcher.Services
                         text-transform: uppercase;
                         color: #55555a;
                     }
+                    .countdown {
+                        margin-top: 14px;
+                        font-size: 12px;
+                        color: #71717a;
+                    }
+                    .close-btn {
+                        margin-top: 16px;
+                        display: none;
+                        border: 1px solid #33333a;
+                        background: #232326;
+                        color: #ffffff;
+                        font-size: 13px;
+                        padding: 9px 18px;
+                        border-radius: 8px;
+                        cursor: pointer;
+                        font-family: inherit;
+                    }
+                    .close-btn:hover { background: #2b2b2f; }
                     @keyframes rise {
                         from { opacity: 0; transform: translateY(8px); }
                         to { opacity: 1; transform: translateY(0); }
@@ -332,9 +350,32 @@ namespace Pasyot_Launcher.Services
                     <div class="icon">{{icon}}</div>
                     <h1>{{title}}</h1>
                     <p>{{message}}</p>
+                    <p class="countdown" id="countdown">Окно закроется через 5 секунд…</p>
+                    <button class="close-btn" id="closeBtn" onclick="tryClose()">Закрыть окно</button>
                     <div class="brand">Pasyot Launcher</div>
                 </div>
-                <script>setTimeout(function () { window.close(); }, 5000);</script>
+                <script>
+                    var secondsLeft = 5;
+                    var countdownEl = document.getElementById('countdown');
+                    var closeBtn = document.getElementById('closeBtn');
+
+                    function tryClose() {
+                        try { window.close(); } catch (e) {}
+                        try { window.open('', '_self', ''); window.close(); } catch (e) {}
+                    }
+
+                    var timer = setInterval(function () {
+                        secondsLeft--;
+                        if (secondsLeft > 0) {
+                            countdownEl.textContent = 'Окно закроется через ' + secondsLeft + ' сек…';
+                        } else {
+                            clearInterval(timer);
+                            countdownEl.textContent = 'Можно закрыть это окно.';
+                            tryClose();
+                            setTimeout(function () { closeBtn.style.display = 'inline-block'; }, 400);
+                        }
+                    }, 1000);
+                </script>
             </body>
             </html>
             """;

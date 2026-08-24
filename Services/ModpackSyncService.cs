@@ -72,7 +72,7 @@ namespace Pasyot_Launcher.Services
                 int completed = Interlocked.Increment(ref _completedFiles);
                 _progress?.Report(new SyncProgressReport
                 {
-                    Status = $"Загружено ({completed}/{_totalFiles}): {fileName}",
+                    Status = $"Загрузка ({completed}/{_totalFiles}): {fileName}",
                     Percentage = _totalBytes > 0 ? (double)Interlocked.Read(ref _downloadedBytes) / _totalBytes * 100 : (double)completed / _totalFiles * 100
                 });
             }
@@ -122,6 +122,17 @@ namespace Pasyot_Launcher.Services
             return summary?.LatestVersion;
         }
 
+        public async Task<(ManifestModel Manifest, List<ManifestFile> ChangedFiles)?> PreviewUpdateAsync(PasyotPack pack, string profilesPath)
+        {
+            string manifestUrl = ResolveManifestUrl(pack);
+            var manifest = await _httpClient.GetFromJsonAsync<ManifestModel>(manifestUrl).ConfigureAwait(false);
+            if (manifest == null || manifest.Files == null) return null;
+
+            string modpackDir = Path.Combine(profilesPath, pack.Name);
+            var changedFiles = await FindPendingFilesAsync(modpackDir, manifest.Files, null).ConfigureAwait(false);
+            return (manifest, changedFiles);
+        }
+
         public Task<ManifestModel?> SyncAsync(PasyotPack pack, string profilesPath, IProgress<SyncProgressReport>? progress = null)
             => SyncAsync(pack, profilesPath, progress, allowManifestRetry: true);
 
@@ -129,7 +140,7 @@ namespace Pasyot_Launcher.Services
         {
             string manifestUrl = ResolveManifestUrl(pack);
 
-            progress?.Report(new SyncProgressReport { Status = "Получение манифеста...", Percentage = 0 });
+            progress?.Report(new SyncProgressReport { Status = "Проверка обновлений...", Percentage = 0 });
 
             var manifest = await _httpClient.GetFromJsonAsync<ManifestModel>(manifestUrl).ConfigureAwait(false);
             if (manifest == null || manifest.Files == null) return null;
@@ -358,7 +369,7 @@ namespace Pasyot_Launcher.Services
                     return;
                 }
 
-                progress?.Report(new SyncProgressReport { Status = "Распаковка общего пакета мелких файлов...", Percentage = 100 });
+                progress?.Report(new SyncProgressReport { Status = "Загрузка: распаковка общего пакета мелких файлов...", Percentage = 100 });
 
                 Directory.CreateDirectory(tempExtractDir);
                 using (var gzip = new GZipStream(File.OpenRead(tempArchive), CompressionMode.Decompress))

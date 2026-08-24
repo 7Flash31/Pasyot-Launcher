@@ -11,6 +11,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
+using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -27,6 +28,22 @@ namespace Pasyot_Launcher.Services
         private const int DownloaderBoundedCapacity = 2048;
 
         private readonly HttpClient _httpClient;
+
+        static MinecraftService()
+        {
+            // CmlLib.Core.Installer.Forge opens an ad-wall page in the default browser after every
+            // Forge/NeoForge install (ForgeInstaller.showAd -> Process.Start(ForgeAdUrl)). Blanking the
+            // field makes that Process.Start throw on an empty filename, which the library swallows itself.
+            try
+            {
+                typeof(ForgeInstaller)
+                    .GetField(nameof(ForgeInstaller.ForgeAdUrl), BindingFlags.Public | BindingFlags.Static)
+                    ?.SetValue(null, string.Empty);
+            }
+            catch
+            {
+            }
+        }
 
         public MinecraftService(HttpClient httpClient)
         {

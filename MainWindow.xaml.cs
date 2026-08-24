@@ -39,6 +39,10 @@ namespace Pasyot_Launcher
 
         private AppSettings _appSettings;
         private ModpackProfile? _selectedModpack;
+        private bool _selectedPackUpdateAvailable;
+
+        private Process? _runningGameProcess;
+        private string? _runningGamePackName;
 
         public MainWindow()
         {
@@ -217,6 +221,12 @@ namespace Pasyot_Launcher
 
         private async Task CheckModpackStatusAsync(PasyotPack pack)
         {
+            if (_runningGameProcess != null && !_runningGameProcess.HasExited && _runningGamePackName == pack.Name)
+            {
+                _homePage.SetPlayButtonState("Игра запущена", true);
+                return;
+            }
+
             bool installed = _syncService.IsInstalled(pack.Name, _appSettings.ProfilesPath);
 
             int? latestVersion = null;
@@ -238,19 +248,20 @@ namespace Pasyot_Launcher
 
             if (!installed)
             {
+                _selectedPackUpdateAvailable = false;
                 _homePage.SetPlayButtonState("Скачать", serverOnline);
                 return;
             }
 
             if (!serverOnline)
             {
+                _selectedPackUpdateAvailable = false;
                 _homePage.SetPlayButtonState("Запустить (Офлайн)", true);
                 return;
             }
 
-            _homePage.SetPlayButtonState(
-                latestVersion.HasValue && latestVersion.Value > pack.Version ? "Обновить" : "Запустить",
-                true);
+            _selectedPackUpdateAvailable = latestVersion.HasValue && latestVersion.Value > pack.Version;
+            _homePage.SetPlayButtonState(_selectedPackUpdateAvailable ? "Обновить" : "Запустить", true);
         }
 
         private async void LaunchSelectedModpack()
@@ -261,15 +272,34 @@ namespace Pasyot_Launcher
                 return;
             }
 
+            if (_runningGameProcess != null && !_runningGameProcess.HasExited)
+            {
+                var confirmResult = MessageBox.Show(
+                    $"«{_runningGamePackName}» уже запущен(а). Точно хотите запустить ещё раз?",
+                    "Игра уже запущена",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Question);
+
+                if (confirmResult != MessageBoxResult.Yes) return;
+            }
+
+            bool wasInstalled = _syncService.IsInstalled(_selectedModpack.PackData.Name, _appSettings.ProfilesPath);
+
             try
             {
                 _homePage.SetPlayButtonState("Подготовка...", false);
                 _homePage.SetActionsEnabled(false);
 
+                if (wasInstalled && _selectedPackUpdateAvailable)
+                {
+                    await ShowUpdateChangelogAsync(_selectedModpack.PackData);
+                }
+
                 _homePage.ShowProgress(true);
                 _homePage.SetProgress(0, "Подготовка...");
 
-                var progress = new Progress<SyncProgressReport>(report =>
+                var syncProgress = WrapProgress(relabelAsUpdate: wasInstalled);
+                var launchProgress = new Progress<SyncProgressReport>(report =>
                 {
                     _homePage.SetProgress(report.Percentage, report.Status);
                 });
@@ -277,7 +307,7 @@ namespace Pasyot_Launcher
                 ManifestModel? manifest;
                 try
                 {
-                    manifest = await _syncService.SyncAsync(_selectedModpack.PackData, _appSettings.ProfilesPath, progress);
+                    manifest = await SyncWithRetryAsync(_selectedModpack.PackData, syncProgress);
                 }
                 catch (HttpRequestException) when (_syncService.IsInstalled(_selectedModpack.PackData.Name, _appSettings.ProfilesPath))
                 {
@@ -314,13 +344,19 @@ namespace Pasyot_Launcher
                     ProfileText.Text,
                     loader,
                     minecraftVersion,
-                    progress
+                    launchProgress
                 );
 
-                _homePage.SetPlayButtonState("Запустить", true);
+                _runningGameProcess = gameProcess;
+                _runningGamePackName = _selectedModpack.PackData.Name;
+                _homePage.SetPlayButtonState("Игра запущена", true);
                 ShowToast($"«{_selectedModpack.PackData.Name}» запущен", ToastType.Success);
 
                 _ = MonitorGameProcessAsync(gameProcess, _selectedModpack.PackData.Name);
+            }
+            catch (OperationCanceledException)
+            {
+                ShowToast("Загрузка отменена", ToastType.Info);
             }
             catch (Exception ex)
             {
@@ -329,6 +365,7 @@ namespace Pasyot_Launcher
             finally
             {
                 _homePage.ShowProgress(false);
+                _homePage.HideSyncError();
                 _homePage.SetActionsEnabled(true);
                 if (_selectedModpack != null)
                 {
@@ -392,7 +429,7 @@ namespace Pasyot_Launcher
                     _homePage.SetProgress(report.Percentage, report.Status);
                 });
 
-                var manifest = await _syncService.SyncAsync(pack, _appSettings.ProfilesPath, progress);
+                var manifest = await SyncWithRetryAsync(pack, progress);
 
                 if (manifest != null)
                 {
@@ -411,6 +448,10 @@ namespace Pasyot_Launcher
 
                 ShowToast($"Проверка «{pack.Name}» завершена — все файлы на месте", ToastType.Success);
             }
+            catch (OperationCanceledException)
+            {
+                ShowToast("Проверка отменена", ToastType.Info);
+            }
             catch (Exception ex)
             {
                 ShowToast($"Ошибка при проверке файлов: {ex.Message}", ToastType.Error, ex.ToString());
@@ -418,6 +459,7 @@ namespace Pasyot_Launcher
             finally
             {
                 _homePage.ShowProgress(false);
+                _homePage.HideSyncError();
                 _homePage.SetActionsEnabled(true);
                 _ = CheckModpackStatusAsync(pack);
             }
@@ -436,6 +478,25 @@ namespace Pasyot_Launcher
                 return;
             }
 
+            try
+            {
+                Dispatcher.Invoke(() =>
+                {
+                    if (_runningGameProcess == process)
+                    {
+                        _runningGameProcess = null;
+                        _runningGamePackName = null;
+                        if (_selectedModpack != null)
+                        {
+                            _ = CheckModpackStatusAsync(_selectedModpack.PackData);
+                        }
+                    }
+                });
+            }
+            catch
+            {
+            }
+
             bool crashedEarly = process.ExitCode != 0 && DateTime.UtcNow - startedAt < TimeSpan.FromSeconds(15);
             if (!crashedEarly) return;
 
@@ -444,6 +505,112 @@ namespace Pasyot_Launcher
                 Dispatcher.Invoke(() => ShowToast(
                     $"«{packName}» неожиданно завершился (код {process.ExitCode}) вскоре после запуска. Проверьте логи в папке сборки.",
                     ToastType.Error));
+            }
+            catch
+            {
+            }
+        }
+
+        private IProgress<SyncProgressReport> WrapProgress(bool relabelAsUpdate)
+        {
+            return new Progress<SyncProgressReport>(report =>
+            {
+                string status = report.Status;
+                if (relabelAsUpdate)
+                {
+                    if (status.StartsWith("Загрузка", StringComparison.Ordinal))
+                        status = "Обновление" + status.Substring("Загрузка".Length);
+                }
+                _homePage.SetProgress(report.Percentage, status);
+            });
+        }
+
+        private async Task<ManifestModel?> SyncWithRetryAsync(PasyotPack pack, IProgress<SyncProgressReport> progress)
+        {
+            while (true)
+            {
+                try
+                {
+                    var result = await _syncService.SyncAsync(pack, _appSettings.ProfilesPath, progress);
+                    _homePage.HideSyncError();
+                    return result;
+                }
+                catch (HttpRequestException) when (_syncService.IsInstalled(pack.Name, _appSettings.ProfilesPath))
+                {
+                    throw;
+                }
+                catch (Exception ex) when (ex is HttpRequestException or IOException or TaskCanceledException)
+                {
+                    bool retry = await WaitForRetryOrCancelAsync($"Ошибка загрузки: {ex.Message}");
+                    if (!retry)
+                    {
+                        throw new OperationCanceledException("Загрузка отменена пользователем.");
+                    }
+                }
+            }
+        }
+
+        private async Task<bool> WaitForRetryOrCancelAsync(string errorMessage)
+        {
+            _homePage.ShowSyncError(errorMessage);
+
+            var tcs = new TaskCompletionSource<bool>();
+            void RetryHandler(object? s, EventArgs e) => tcs.TrySetResult(true);
+            void CancelHandler(object? s, EventArgs e) => tcs.TrySetResult(false);
+
+            _homePage.RetryNowRequested += RetryHandler;
+            _homePage.CancelRetryRequested += CancelHandler;
+
+            try
+            {
+                for (int secondsLeft = 10; secondsLeft > 0; secondsLeft--)
+                {
+                    _homePage.SetSyncErrorCountdown(secondsLeft);
+                    var delayTask = Task.Delay(1000);
+                    var completed = await Task.WhenAny(delayTask, tcs.Task);
+                    if (completed == tcs.Task) return await tcs.Task;
+                }
+
+                return true;
+            }
+            finally
+            {
+                _homePage.RetryNowRequested -= RetryHandler;
+                _homePage.CancelRetryRequested -= CancelHandler;
+                _homePage.HideSyncError();
+            }
+        }
+
+        private async Task ShowUpdateChangelogAsync(PasyotPack pack)
+        {
+            try
+            {
+                var preview = await _syncService.PreviewUpdateAsync(pack, _appSettings.ProfilesPath);
+                if (preview == null || preview.Value.ChangedFiles.Count == 0) return;
+
+                var (manifest, changedFiles) = preview.Value;
+
+                var sb = new System.Text.StringBuilder();
+                sb.AppendLine($"Доступно обновление «{pack.Name}»: v{pack.Version} → v{manifest.Version}");
+
+                if (!string.IsNullOrWhiteSpace(manifest.Notes))
+                {
+                    sb.AppendLine();
+                    sb.AppendLine(manifest.Notes.Trim());
+                }
+
+                sb.AppendLine();
+                sb.AppendLine($"Изменено файлов: {changedFiles.Count}");
+                foreach (var file in changedFiles.Take(15))
+                {
+                    sb.AppendLine($" • {file.Path}");
+                }
+                if (changedFiles.Count > 15)
+                {
+                    sb.AppendLine($" …и ещё {changedFiles.Count - 15}");
+                }
+
+                MessageBox.Show(sb.ToString(), "Изменения в обновлении", MessageBoxButton.OK, MessageBoxImage.Information);
             }
             catch
             {

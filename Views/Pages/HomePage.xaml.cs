@@ -11,6 +11,8 @@ namespace Pasyot_Launcher.Views.Pages
         public event EventHandler? PlayRequested;
         public event EventHandler? OpenFolderRequested;
         public event EventHandler? VerifyRequested;
+        public event EventHandler? RetryNowRequested;
+        public event EventHandler? CancelRetryRequested;
 
         private bool _suppressRamChanged = true;
 
@@ -81,6 +83,27 @@ namespace Pasyot_Launcher.Views.Pages
                 StatusTextBlock.Text = status;
             }
         }
+
+        public void ShowSyncError(string message)
+        {
+            SyncErrorMessageText.Text = message;
+            SyncErrorPanel.Visibility = Visibility.Visible;
+        }
+
+        public void HideSyncError()
+        {
+            SyncErrorPanel.Visibility = Visibility.Collapsed;
+        }
+
+        public void SetSyncErrorCountdown(int secondsLeft)
+        {
+            SyncErrorCountdownText.Text = secondsLeft > 0
+                ? $"Автоматический повтор через {secondsLeft} сек."
+                : "Повтор...";
+        }
+
+        private void RetryNowButton_Click(object sender, RoutedEventArgs e) => RetryNowRequested?.Invoke(this, EventArgs.Empty);
+        private void CancelRetryButton_Click(object sender, RoutedEventArgs e) => CancelRetryRequested?.Invoke(this, EventArgs.Empty);
 
         public void SetServerStatus(bool? online)
         {

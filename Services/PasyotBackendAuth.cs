@@ -12,7 +12,7 @@ namespace Pasyot_Launcher.Services
 {
     internal static class PasyotBackendAuth
     {
-        public const string BaseUrl = "http://26.75.134.108:8081";
+        public const string BaseUrl = "https://pasyot.com";
 
         private static readonly HttpClient HttpClient = new HttpClient();
 
