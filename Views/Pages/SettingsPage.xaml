@@ -1,0 +1,106 @@
+<UserControl x:Class="Pasyot_Launcher.Views.Pages.SettingsPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             mc:Ignorable="d"
+             d:DesignHeight="600" d:DesignWidth="700">
+
+    <ScrollViewer Style="{StaticResource CustomScrollViewer}" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Margin="24" MaxWidth="620" HorizontalAlignment="Left">
+            <TextBlock Text="Настройки" FontSize="22" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,16"/>
+
+            <Border Style="{StaticResource CardBorderStyle}" Padding="16" Margin="0,0,0,14">
+                <StackPanel>
+                    <TextBlock Text="Папка с профилями" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,8"/>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <TextBox x:Name="ProfilesPathTextBox"
+                                 Grid.Column="0"
+                                 Style="{StaticResource PlaceholderTextBoxStyle}"
+                                 Tag="C:\Users\Username\AppData\Roaming\pasyot-launcher\profiles"
+                                 Height="36"/>
+
+                        <Button Grid.Column="1"
+                                Content="Обзор"
+                                Style="{StaticResource SecondaryButtonStyle}"
+                                Height="36" Width="90"
+                                Margin="10,0,0,0"
+                                Click="BrowseProfilesFolder_Click"/>
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource CardBorderStyle}" Padding="16" Margin="0,0,0,14">
+                <StackPanel>
+                    <Grid Margin="0,0,0,18">
+                        <TextBlock Text="Выделение оперативной памяти (ОЗУ)" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" VerticalAlignment="Center"/>
+
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                            <TextBox x:Name="RamTextBox"
+                                     Text="{Binding ElementName=RamSlider, Path=Value, UpdateSourceTrigger=PropertyChanged, StringFormat={}{0:F0}}"
+                                     Width="65" Height="26"
+                                     TextAlignment="Center"
+                                     VerticalContentAlignment="Center"
+                                     Background="{StaticResource SurfaceAltBrush}"
+                                     Foreground="{StaticResource TextPrimaryBrush}"
+                                     BorderThickness="1"
+                                     BorderBrush="{StaticResource BorderBrush}"/>
+                            <TextBlock Text=" МБ" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center" Margin="5,0,0,0"/>
+                        </StackPanel>
+                    </Grid>
+
+                    <Slider x:Name="RamSlider"
+                            Style="{StaticResource CustomSliderStyle}"
+                            Minimum="1024" Maximum="16384" Value="4096"
+                            TickFrequency="512" IsSnapToTickEnabled="True" IsMoveToPointEnabled="True"/>
+
+                    <Grid Margin="0,10,0,0">
+                        <TextBlock Text="1024 МБ" Foreground="{StaticResource TextMutedBrush}" FontSize="11"/>
+                        <TextBlock x:Name="MaxRamLabel" Text="16384 МБ" Foreground="{StaticResource TextMutedBrush}" FontSize="11" HorizontalAlignment="Right"/>
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource CardBorderStyle}" Padding="16" Margin="0,0,0,14">
+                <StackPanel>
+                    <TextBlock Text="Аргументы Java (JVM Flags)" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,8"/>
+                    <TextBox x:Name="JavaArgsTextBox" Style="{StaticResource PlaceholderTextBoxStyle}" Tag="-XX:+UseG1GC -Dsun.rmi.dgc.server.gcInterval=2147483647" Height="36" TextWrapping="Wrap"/>
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource CardBorderStyle}" Padding="16" Margin="0,0,0,20">
+                <StackPanel>
+                    <TextBlock Text="Переменные среды (Environment Variables)" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,8"/>
+                    <TextBox x:Name="EnvVarsTextBox" Style="{StaticResource PlaceholderTextBoxStyle}" Tag="KEY=VALUE;OTHER_KEY=VALUE" Height="36"/>
+                    <TextBlock Text="Разделяйте переменные точкой с запятой (;)" Foreground="{StaticResource TextMutedBrush}" FontSize="11" Margin="0,4,0,0"/>
+                </StackPanel>
+            </Border>
+
+            <Grid Margin="0,0,0,24">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <Button Grid.Column="0"
+                        Content="Сбросить"
+                        Style="{StaticResource SecondaryButtonStyle}"
+                        Height="40" Width="110"
+                        Click="ResetButton_Click"/>
+
+                <Button Grid.Column="1"
+                        Content="Сохранить настройки"
+                        Style="{StaticResource PrimaryButtonStyle}"
+                        FontSize="14"
+                        Height="40"
+                        Margin="10,0,0,0"
+                        Click="SaveButton_Click"/>
+            </Grid>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

@@ -13,8 +13,6 @@ public class AppSettings
 
     public int RamMb { get; set; } = 4096;
 
-    public string ServerUrl { get; set; } = "https://pasyot.com";
-
     public string JavaArgs { get; set; } = string.Empty;
 
     public string EnvVars { get; set; } = string.Empty;

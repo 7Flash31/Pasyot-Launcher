@@ -11,6 +11,8 @@ namespace Pasyot_Launcher.Services
     {
         public string AccessToken { get; set; } = string.Empty;
         public string RefreshToken { get; set; } = string.Empty;
+
+        public string BackendSessionToken { get; set; } = string.Empty;
     }
 
     internal class SecureStorage

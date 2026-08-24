@@ -25,10 +25,15 @@ namespace Pasyot_Launcher.Views
 
         public PasyotPack? SelectedPack { get; private set; }
 
-        public AddModpackWindow(IEnumerable<string>? existingSlugs = null)
+        public AddModpackWindow(IEnumerable<string>? existingSlugs = null, string? preloadPath = null)
         {
             InitializeComponent();
             _existingSlugs = new HashSet<string>(existingSlugs ?? Enumerable.Empty<string>());
+
+            if (!string.IsNullOrEmpty(preloadPath))
+            {
+                LoadPack(preloadPath);
+            }
         }
 
         private void BrowseButton_Click(object sender, RoutedEventArgs e)
@@ -43,11 +48,16 @@ namespace Pasyot_Launcher.Views
             if (dialog.ShowDialog() != true)
                 return;
 
+            LoadPack(dialog.FileName);
+        }
+
+        private void LoadPack(string path)
+        {
             try
             {
-                var pack = ReadPasyotPack(dialog.FileName);
+                var pack = ReadPasyotPack(path);
 
-                PackPathTextBox.Text = dialog.FileName;
+                PackPathTextBox.Text = path;
                 ModpackNameText.Text = pack.Name;
                 ModpackLoaderText.Text = string.IsNullOrWhiteSpace(pack.Loader) ? "—" : pack.Loader;
                 ModpackMinecraftText.Text = string.IsNullOrWhiteSpace(pack.Minecraft) ? "—" : pack.Minecraft;
@@ -118,7 +128,7 @@ namespace Pasyot_Launcher.Views
 
         private void ClearInfo()
         {
-            PackPathTextBox.Text = "Файл не выбран";
+            PackPathTextBox.Text = "Файл не выбран, или перетащите его в окно лаунчера";
             ModpackNameText.Text = "—";
             ModpackLoaderText.Text = "—";
             ModpackMinecraftText.Text = "—";

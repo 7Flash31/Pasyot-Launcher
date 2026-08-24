@@ -1,0 +1,43 @@
+<UserControl x:Class="Pasyot_Launcher.Views.Pages.LibraryPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             mc:Ignorable="d"
+             d:DesignHeight="520" d:DesignWidth="760">
+
+    <Grid Margin="24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <Grid Grid.Row="0" Margin="0,0,0,16">
+            <TextBlock Text="Мои сборки" FontSize="22" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}"/>
+            <Button x:Name="AddModpackButton"
+                    Content="+ Добавить сборку"
+                    Style="{StaticResource PrimaryButtonStyle}"
+                    FontSize="13" Height="36" Width="170"
+                    HorizontalAlignment="Right"
+                    Click="AddModpackButton_Click"/>
+        </Grid>
+
+        <Grid Grid.Row="1">
+            <TextBlock x:Name="EmptyStateText"
+                       Text="Пока нет ни одной сборки.&#x0a;Нажмите «+ Добавить сборку», чтобы начать."
+                       Foreground="{StaticResource TextMutedBrush}"
+                       FontSize="13"
+                       TextWrapping="Wrap"
+                       TextAlignment="Center"
+                       HorizontalAlignment="Center"
+                       VerticalAlignment="Center"
+                       Visibility="Collapsed"/>
+
+            <ScrollViewer Style="{StaticResource CustomScrollViewer}"
+                          VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled">
+                <WrapPanel x:Name="ItemsHost" Orientation="Horizontal"/>
+            </ScrollViewer>
+        </Grid>
+    </Grid>
+</UserControl>

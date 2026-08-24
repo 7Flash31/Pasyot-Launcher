@@ -1,180 +1,147 @@
-﻿<Window x:Class="Pasyot_Launcher.Views.AddModpackWindow"
+<Window x:Class="Pasyot_Launcher.Views.AddModpackWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         Title="Добавить сборку"
-        Height="510" Width="480"
-        MinHeight="510" MinWidth="440"
-        Background="#181818" Foreground="White"
+        Height="540" Width="480"
+        MinHeight="540" MinWidth="440"
+        Background="{StaticResource WindowBackgroundBrush}"
+        Foreground="{StaticResource TextPrimaryBrush}"
         WindowStartupLocation="CenterOwner"
+        WindowStyle="None"
+        AllowsTransparency="False"
         ResizeMode="NoResize"
         ShowInTaskbar="False"
         Icon="/Resources/app.ico">
 
-    <Window.Resources>
-        <Style x:Key="PrimaryButton" TargetType="Button">
-            <Setter Property="Background" Value="#007ACC"/>
-            <Setter Property="Foreground" Value="White"/>
-            <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border x:Name="border" Background="{TemplateBinding Background}" CornerRadius="6">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="border" Property="Background" Value="#0098FF"/>
-                            </Trigger>
-                            <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="border" Property="Background" Value="#005A9E"/>
-                            </Trigger>
-                            <Trigger Property="IsEnabled" Value="False">
-                                <Setter TargetName="border" Property="Background" Value="#333333"/>
-                                <Setter Property="Foreground" Value="#777777"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
+    <shell:WindowChrome.WindowChrome>
+        <shell:WindowChrome CaptionHeight="40" ResizeBorderThickness="0" GlassFrameThickness="0" CornerRadius="0" UseAeroCaptionButtons="False"/>
+    </shell:WindowChrome.WindowChrome>
 
-        <Style x:Key="SecondaryButton" TargetType="Button">
-            <Setter Property="Background" Value="#252525"/>
-            <Setter Property="Foreground" Value="#CCCCCC"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="BorderBrush" Value="#333333"/>
-            <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border x:Name="border"
-                                Background="{TemplateBinding Background}"
-                                BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="{TemplateBinding BorderThickness}"
-                                CornerRadius="6">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="border" Property="Background" Value="#333333"/>
-                                <Setter Property="Foreground" Value="White"/>
-                            </Trigger>
-                            <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="border" Property="Background" Value="#1E1E1E"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-    </Window.Resources>
+    <Border BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="40"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
 
-    <Grid Margin="24">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/>
-        </Grid.RowDefinitions>
+            <Grid Grid.Row="0" Background="{StaticResource TitleBarBackgroundBrush}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
 
-        <TextBlock Text="Добавить сборку"
-                   FontSize="20" FontWeight="Bold"
-                   Margin="0,0,0,20"/>
+                <TextBlock Grid.Column="0" Text="Добавить сборку" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" FontWeight="SemiBold" Margin="16,0,0,0" VerticalAlignment="Center"/>
 
-        <Border Grid.Row="1" Background="#202020" CornerRadius="8" Padding="16" Margin="0,0,0,16">
-            <Grid>
+                <Button Grid.Column="1"
+                        Style="{StaticResource TitleBarCloseButtonStyle}"
+                        shell:WindowChrome.IsHitTestVisibleInChrome="True"
+                        Click="CancelButton_Click">
+                    <Path Data="{StaticResource IconClose}" Style="{StaticResource OutlineIconStyle}" Width="12" Height="12" Stroke="{StaticResource TextPrimaryBrush}"/>
+                </Button>
+            </Grid>
+
+            <Grid Grid.Row="1" Margin="24">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
                     <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
 
-                <TextBlock Text="Файл сборки (.pasyotpack)"
-                           Foreground="#888888" FontSize="12" Margin="0,0,0,8"/>
+                <Border Grid.Row="0" Style="{StaticResource CardBorderStyle}" Padding="16" Margin="0,0,0,16">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
 
-                <Grid Grid.Row="1" Margin="0,0,0,12">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
+                        <TextBlock Text="Файл сборки (.pasyotpack)"
+                                   Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" Margin="0,0,0,8"/>
 
-                    <TextBox x:Name="PackPathTextBox"
-                             Height="36"
-                             VerticalContentAlignment="Center"
-                             Background="#252525"
-                             Foreground="White"
-                             BorderBrush="#333333"
-                             BorderThickness="1"
-                             Padding="10,0"
-                             IsReadOnly="True"
-                             Text="Файл не выбран"/>
+                        <Grid Grid.Row="1">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
 
-                    <Button Grid.Column="1"
-                            Content="Обзор..."
-                            Style="{StaticResource SecondaryButton}"
-                            Height="36" Width="90"
-                            Margin="10,0,0,0"
-                            Click="BrowseButton_Click"/>
-                </Grid>
+                            <TextBox x:Name="PackPathTextBox"
+                                     Height="36"
+                                     VerticalContentAlignment="Center"
+                                     Background="{StaticResource SurfaceAltBrush}"
+                                     Foreground="{StaticResource TextPrimaryBrush}"
+                                     BorderBrush="{StaticResource BorderBrush}"
+                                     BorderThickness="1"
+                                     Padding="10,0"
+                                     IsReadOnly="True"
+                                     Text="Файл не выбран, или перетащите его в окно лаунчера"/>
+
+                            <Button Grid.Column="1"
+                                    Content="Обзор..."
+                                    Style="{StaticResource SecondaryButtonStyle}"
+                                    Height="36" Width="90"
+                                    Margin="10,0,0,0"
+                                    Click="BrowseButton_Click"/>
+                        </Grid>
+                    </Grid>
+                </Border>
+
+                <Border x:Name="InfoPanel"
+                        Grid.Row="1"
+                        Style="{StaticResource CardBorderStyle}"
+                        Padding="16"
+                        VerticalAlignment="Top"
+                        Visibility="Collapsed">
+                    <StackPanel>
+                        <TextBlock Text="Информация о сборке"
+                                   Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" Margin="0,0,0,10"/>
+
+                        <Grid Margin="0,0,0,6">
+                            <TextBlock Text="Название:" Foreground="{StaticResource TextSecondaryBrush}" Width="90"/>
+                            <TextBlock x:Name="ModpackNameText" Text="—" Foreground="{StaticResource TextPrimaryBrush}" FontWeight="SemiBold" Margin="90,0,0,0"/>
+                        </Grid>
+
+                        <Grid Margin="0,0,0,6">
+                            <TextBlock Text="Загрузчик:" Foreground="{StaticResource TextSecondaryBrush}" Width="90"/>
+                            <TextBlock x:Name="ModpackLoaderText" Text="—" Foreground="{StaticResource TextPrimaryBrush}" Margin="90,0,0,0"/>
+                        </Grid>
+
+                        <Grid Margin="0,0,0,6">
+                            <TextBlock Text="Minecraft:" Foreground="{StaticResource TextSecondaryBrush}" Width="90"/>
+                            <TextBlock x:Name="ModpackMinecraftText" Text="—" Foreground="{StaticResource TextPrimaryBrush}" Margin="90,0,0,0"/>
+                        </Grid>
+
+                        <Grid Margin="0,0,0,6">
+                            <TextBlock Text="Версия:" Foreground="{StaticResource TextSecondaryBrush}" Width="90"/>
+                            <TextBlock x:Name="ModpackVersionText" Text="—" Foreground="{StaticResource TextPrimaryBrush}" Margin="90,0,0,0"/>
+                        </Grid>
+
+                        <Grid>
+                            <TextBlock Text="Сервер:" Foreground="{StaticResource TextSecondaryBrush}" Width="90"/>
+                            <TextBlock x:Name="ModpackServerText" Text="—" Foreground="{StaticResource TextPrimaryBrush}" Margin="90,0,0,0" TextTrimming="CharacterEllipsis"/>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <StackPanel Grid.Row="2"
+                            Orientation="Horizontal"
+                            HorizontalAlignment="Right"
+                            Margin="0,20,0,0">
+
+                    <Button Content="Отмена"
+                            Style="{StaticResource SecondaryButtonStyle}"
+                            Height="38" Width="100"
+                            Margin="0,0,10,0"
+                            Click="CancelButton_Click"/>
+
+                    <Button x:Name="AddButton"
+                            Content="Добавить"
+                            Style="{StaticResource PrimaryButtonStyle}"
+                            FontSize="13"
+                            Height="38" Width="120"
+                            IsEnabled="False"
+                            Click="AddButton_Click"/>
+                </StackPanel>
             </Grid>
-        </Border>
-
-        <Border x:Name="InfoPanel"
-                Grid.Row="2"
-                Background="#202020"
-                CornerRadius="8"
-                Padding="16"
-                Visibility="Collapsed">
-            <StackPanel>
-                <TextBlock Text="Информация о сборке"
-                           Foreground="#888888" FontSize="12" Margin="0,0,0,10"/>
-
-                <Grid Margin="0,0,0,6">
-                    <TextBlock Text="Название:" Foreground="#888888" Width="90"/>
-                    <TextBlock x:Name="ModpackNameText" Text="—" FontWeight="SemiBold" Margin="90,0,0,0"/>
-                </Grid>
-
-                <Grid Margin="0,0,0,6">
-                    <TextBlock Text="Загрузчик:" Foreground="#888888" Width="90"/>
-                    <TextBlock x:Name="ModpackLoaderText" Text="—" Margin="90,0,0,0"/>
-                </Grid>
-
-                <Grid Margin="0,0,0,6">
-                    <TextBlock Text="Minecraft:" Foreground="#888888" Width="90"/>
-                    <TextBlock x:Name="ModpackMinecraftText" Text="—" Margin="90,0,0,0"/>
-                </Grid>
-
-                <Grid Margin="0,0,0,6">
-                    <TextBlock Text="Версия:" Foreground="#888888" Width="90"/>
-                    <TextBlock x:Name="ModpackVersionText" Text="—" Margin="90,0,0,0"/>
-                </Grid>
-
-                <Grid>
-                    <TextBlock Text="Сервер:" Foreground="#888888" Width="90"/>
-                    <TextBlock x:Name="ModpackServerText" Text="—" Margin="90,0,0,0" TextTrimming="CharacterEllipsis"/>
-                </Grid>
-            </StackPanel>
-        </Border>
-
-        <StackPanel Grid.Row="3"
-                    Orientation="Horizontal"
-                    HorizontalAlignment="Right"
-                    Margin="0,20,0,0">
-
-            <Button Content="Отмена"
-                    Style="{StaticResource SecondaryButton}"
-                    Height="38" Width="100"
-                    Margin="0,0,10,0"
-                    Click="CancelButton_Click"/>
-
-            <Button x:Name="AddButton"
-                    Content="Добавить"
-                    Style="{StaticResource PrimaryButton}"
-                    Height="38" Width="120"
-                    IsEnabled="False"
-                    Click="AddButton_Click"/>
-        </StackPanel>
-    </Grid>
+        </Grid>
+    </Border>
 </Window>

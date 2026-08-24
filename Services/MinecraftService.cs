@@ -6,10 +6,15 @@ using CmlLib.Core.ModLoaders.FabricMC;
 using CmlLib.Core.ProcessBuilder;
 using Pasyot_Launcher.Models;
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Threading.Tasks;
 using static Pasyot_Launcher.Services.ModpackSyncService;
 
@@ -97,11 +102,17 @@ namespace Pasyot_Launcher.Services
             progress?.Report(new SyncProgressReport { Status = "Загрузка игровых библиотек и ассетов...", Percentage = 0 });
             await launcher.InstallAsync(versionName);
 
+            EnsureCustomSkinLoaderConfig(gameDirectory, pack.Server);
+
             progress?.Report(new SyncProgressReport { Status = "Подготовка параметров запуска...", Percentage = 90 });
+            string resolvedPlayerName = string.IsNullOrWhiteSpace(playerName) ? "Player" : playerName;
             var launchOptions = new MLaunchOption
             {
                 MaximumRamMb = settings.RamMb,
-                Session = MSession.CreateOfflineSession(string.IsNullOrWhiteSpace(playerName) ? "Player" : playerName),
+                Session = new MSession(resolvedPlayerName, "access_token", OfflinePlayerUuid(resolvedPlayerName))
+                {
+                    UserType = "msa"
+                },
                 Path = path
             };
 
@@ -118,6 +129,101 @@ namespace Pasyot_Launcher.Services
             Process process = await launcher.BuildProcessAsync(versionName, launchOptions);
             process.Start();
             return process;
+        }
+
+        private static string? FindCustomSkinLoaderConfig(string gameDirectory)
+        {
+            string known = Path.Combine(gameDirectory, "CustomSkinLoader", "CustomSkinLoader.json");
+            if (File.Exists(known)) return known;
+
+            // Fallback for other mod versions/layouts: only ever descend into folders whose
+            // name already suggests they belong to the skin mod, never the whole profile
+            // (which would also walk saves/, resourcepacks/, mods/ - thousands of files).
+            IEnumerable<string> topLevelRoots = new[] { gameDirectory, Path.Combine(gameDirectory, "config") }
+                .Where(Directory.Exists);
+
+            IEnumerable<string> candidateDirs = topLevelRoots
+                .SelectMany(Directory.EnumerateDirectories)
+                .Where(d => Path.GetFileName(d).Contains("skinloader", StringComparison.OrdinalIgnoreCase));
+
+            foreach (string dir in candidateDirs)
+            {
+                foreach (string file in Directory.EnumerateFiles(dir, "*.json", SearchOption.AllDirectories))
+                {
+                    try
+                    {
+                        using var doc = JsonDocument.Parse(File.ReadAllText(file));
+                        if (doc.RootElement.ValueKind == JsonValueKind.Object &&
+                            doc.RootElement.TryGetProperty("loadlist", out _))
+                        {
+                            return file;
+                        }
+                    }
+                    catch
+                    {
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        private static void EnsureCustomSkinLoaderConfig(string gameDirectory, string backendServer)
+        {
+            if (string.IsNullOrWhiteSpace(backendServer)) return;
+
+            string? configPath = FindCustomSkinLoaderConfig(gameDirectory);
+            if (configPath == null) return;
+
+            string root = backendServer.TrimEnd('/') + "/customskinapi/";
+
+            try
+            {
+                JsonObject? config = JsonNode.Parse(File.ReadAllText(configPath)) as JsonObject;
+                if (config == null) return;
+
+                if (config["loadlist"] is not JsonArray loadlist)
+                {
+                    loadlist = new JsonArray();
+                    config["loadlist"] = loadlist;
+                }
+
+                JsonObject? existing = loadlist
+                    .OfType<JsonObject>()
+                    .FirstOrDefault(e => (string?)e["name"] == "Pasyot");
+
+                if (existing != null)
+                {
+                    existing["type"] = "CustomSkinAPI";
+                    existing["root"] = root;
+                }
+                else
+                {
+                    loadlist.Insert(0, new JsonObject
+                    {
+                        ["name"] = "Pasyot",
+                        ["type"] = "CustomSkinAPI",
+                        ["root"] = root
+                    });
+                }
+
+                string tmpPath = configPath + ".tmp";
+                File.WriteAllText(tmpPath, config.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+                File.Move(tmpPath, configPath, overwrite: true);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[EnsureCustomSkinLoaderConfig] {ex}");
+            }
+        }
+
+        private static string OfflinePlayerUuid(string username)
+        {
+            using var md5 = MD5.Create();
+            byte[] hash = md5.ComputeHash(Encoding.UTF8.GetBytes("OfflinePlayer:" + username));
+            hash[6] = (byte)((hash[6] & 0x0F) | 0x30);
+            hash[8] = (byte)((hash[8] & 0x3F) | 0x80);
+            return Convert.ToHexString(hash).ToLowerInvariant();
         }
     }
 }
