@@ -56,6 +56,8 @@ namespace Pasyot_Launcher
             _homePage.PlayRequested += (s, e) => LaunchSelectedModpack();
             _homePage.OpenFolderRequested += (s, e) => OpenSelectedModpackFolder();
             _homePage.VerifyRequested += (s, e) => VerifySelectedModpack();
+            _homePage.RefreshServerStatusRequested += (s, e) => RefreshSelectedModpackStatus();
+            _homePage.ConnectRequested += (s, e) => LaunchSelectedModpack(connectDirectly: true);
 
             _libraryPage = new LibraryPage();
             _libraryPage.AddModpackRequested += (s, e) => AddModpack();
@@ -127,10 +129,38 @@ namespace Pasyot_Launcher
             modpack.OnSelected += (s, profile) => SelectModpack(profile);
 
             modpack.OnDelete += (s, profile) => DeleteModpack(profile);
+            modpack.OnOpenSettings += (s, profile) => OpenModpackSettings(profile);
 
             _ = RefreshUpdateBadgeAsync(modpack, pack);
+            _ = RefreshLocalChangesBadgeAsync(modpack, pack);
+            _ = LoadModpackIconAsync(modpack, pack);
 
             return modpack;
+        }
+
+        private static async Task LoadModpackIconAsync(ModpackProfile ui, PasyotPack pack)
+        {
+            var icon = await IconCache.GetAsync(HttpClient, pack);
+            if (icon != null) ui.SetIcon(icon);
+        }
+
+        private async Task RefreshLocalChangesBadgeAsync(ModpackProfile ui, PasyotPack pack)
+        {
+            if (!_syncService.IsInstalled(pack.Name, _appSettings.ProfilesPath))
+            {
+                ui.SetLocallyModifiedFiles(Array.Empty<string>());
+                return;
+            }
+
+            try
+            {
+                var modified = await _syncService.GetLocallyModifiedFilesAsync(pack, _appSettings.ProfilesPath);
+                ui.SetLocallyModifiedFiles(modified);
+            }
+            catch
+            {
+                // Offline or server unreachable - leave whatever the badge already shows.
+            }
         }
 
         private async Task RefreshUpdateBadgeAsync(ModpackProfile ui, PasyotPack pack)
@@ -217,6 +247,24 @@ namespace Pasyot_Launcher
             _homePage.SetServerStatusChecking();
 
             _ = CheckModpackStatusAsync(profile.PackData);
+            _ = LoadHomeIconAsync(profile.PackData);
+        }
+
+        private async Task LoadHomeIconAsync(PasyotPack pack)
+        {
+            var icon = await IconCache.GetAsync(HttpClient, pack);
+            if (icon != null && _selectedModpack?.PackData.Name == pack.Name)
+            {
+                _homePage.SetIcon(icon);
+            }
+        }
+
+        private void RefreshSelectedModpackStatus()
+        {
+            if (_selectedModpack == null) return;
+
+            _homePage.SetServerStatusChecking();
+            _ = CheckModpackStatusAsync(_selectedModpack.PackData);
         }
 
         private async Task CheckModpackStatusAsync(PasyotPack pack)
@@ -264,7 +312,7 @@ namespace Pasyot_Launcher
             _homePage.SetPlayButtonState(_selectedPackUpdateAvailable ? "Обновить" : "Запустить", true);
         }
 
-        private async void LaunchSelectedModpack()
+        private async void LaunchSelectedModpack(bool connectDirectly = false)
         {
             if (_selectedModpack == null)
             {
@@ -305,14 +353,20 @@ namespace Pasyot_Launcher
                 });
 
                 ManifestModel? manifest;
+                var syncOutcome = new ModpackSyncService.SyncOutcome();
                 try
                 {
-                    manifest = await SyncWithRetryAsync(_selectedModpack.PackData, syncProgress);
+                    manifest = await SyncWithRetryAsync(_selectedModpack.PackData, syncProgress, outcome: syncOutcome);
                 }
                 catch (HttpRequestException) when (_syncService.IsInstalled(_selectedModpack.PackData.Name, _appSettings.ProfilesPath))
                 {
                     manifest = null;
                     ShowToast("Нет соединения с сервером — запуск офлайн на уже установленных файлах", ToastType.Info);
+                }
+
+                if (syncOutcome.PreservedFiles > 0)
+                {
+                    ShowToast($"{syncOutcome.PreservedFiles} файл(ов) не обновлены — изменены локально", ToastType.Info);
                 }
 
                 if (manifest != null)
@@ -344,7 +398,8 @@ namespace Pasyot_Launcher
                     ProfileText.Text,
                     loader,
                     minecraftVersion,
-                    launchProgress
+                    launchProgress,
+                    connectDirectly
                 );
 
                 _runningGameProcess = gameProcess;
@@ -370,6 +425,7 @@ namespace Pasyot_Launcher
                 if (_selectedModpack != null)
                 {
                     _ = CheckModpackStatusAsync(_selectedModpack.PackData);
+                    _ = RefreshLocalChangesBadgeAsync(_selectedModpack, _selectedModpack.PackData);
                 }
             }
         }
@@ -416,6 +472,14 @@ namespace Pasyot_Launcher
                 return;
             }
 
+            var confirmResult = MessageBox.Show(
+                "Проверка целостности приведёт файлы сборки точно к версии с сервера — включая локальные правки конфигов, если они есть. Моды/библиотеки при этом всегда приводятся в соответствие сборке. Миры, добавленные текстурпаки и шейдеры не затрагиваются.\n\nПродолжить?",
+                "Проверка файлов",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question);
+
+            if (confirmResult != MessageBoxResult.Yes) return;
+
             try
             {
                 _homePage.SetPlayButtonEnabled(false);
@@ -423,6 +487,95 @@ namespace Pasyot_Launcher
 
                 _homePage.ShowProgress(true);
                 _homePage.SetProgress(0, "Подготовка...");
+
+                var progress = new Progress<SyncProgressReport>(report =>
+                {
+                    _homePage.SetProgress(report.Percentage, report.Status);
+                });
+
+                var outcome = new ModpackSyncService.SyncOutcome();
+                var manifest = await SyncWithRetryAsync(pack, progress, strict: true, outcome: outcome);
+
+                if (manifest != null)
+                {
+                    pack.Version = manifest.Version;
+
+                    if (!string.IsNullOrWhiteSpace(manifest.Loader))
+                        pack.Loader = manifest.Loader;
+
+                    if (!string.IsNullOrWhiteSpace(manifest.Minecraft))
+                        pack.Minecraft = manifest.Minecraft;
+
+                    _selectedModpack.Init(pack);
+                    _selectedModpack.SetUpdateAvailable(false);
+                    _appSettings.Save();
+                }
+
+                ShowToast($"Проверка «{pack.Name}» завершена — все файлы на месте", ToastType.Success);
+                if (outcome.PreservedFiles > 0)
+                {
+                    ShowToast($"{outcome.PreservedFiles} файл(ов) оставлены без изменений — изменены локально", ToastType.Info);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                ShowToast("Проверка отменена", ToastType.Info);
+            }
+            catch (Exception ex)
+            {
+                ShowToast($"Ошибка при проверке файлов: {ex.Message}", ToastType.Error, ex.ToString());
+            }
+            finally
+            {
+                _homePage.ShowProgress(false);
+                _homePage.HideSyncError();
+                _homePage.SetActionsEnabled(true);
+                _ = CheckModpackStatusAsync(pack);
+                if (_selectedModpack != null) _ = RefreshLocalChangesBadgeAsync(_selectedModpack, pack);
+            }
+        }
+
+        private void OpenModpackSettings(ModpackProfile profile)
+        {
+            var window = new ModpackSettingsWindow(profile.PackData, _syncService, _appSettings) { Owner = this };
+
+            if (window.ShowDialog() == true && window.ResetRequested)
+            {
+                _ = ReinstallModpackFromScratchAsync(profile);
+            }
+        }
+
+        private async Task ReinstallModpackFromScratchAsync(ModpackProfile profile)
+        {
+            var pack = profile.PackData;
+
+            if (_runningGameProcess != null && !_runningGameProcess.HasExited && _runningGamePackName == pack.Name)
+            {
+                ShowToast($"«{pack.Name}» сейчас запущен(а) — сначала закройте игру", ToastType.Info);
+                return;
+            }
+
+            var confirmResult = MessageBox.Show(
+                $"Все файлы сборки «{pack.Name}» будут удалены с диска и загружены заново с сервера — включая миры, конфиги и любые локальные изменения. Это нельзя отменить.\n\nПродолжить?",
+                "Переустановка с нуля",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning);
+
+            if (confirmResult != MessageBoxResult.Yes) return;
+
+            if (_selectedModpack != profile)
+            {
+                SelectModpack(profile);
+            }
+
+            try
+            {
+                _homePage.SetPlayButtonState("Переустановка...", false);
+                _homePage.SetActionsEnabled(false);
+                _homePage.ShowProgress(true);
+                _homePage.SetProgress(0, "Удаление старых файлов...");
+
+                _syncService.DeleteModpackFiles(pack.Name, _appSettings.ProfilesPath);
 
                 var progress = new Progress<SyncProgressReport>(report =>
                 {
@@ -441,27 +594,31 @@ namespace Pasyot_Launcher
                     if (!string.IsNullOrWhiteSpace(manifest.Minecraft))
                         pack.Minecraft = manifest.Minecraft;
 
-                    _selectedModpack.Init(pack);
-                    _selectedModpack.SetUpdateAvailable(false);
+                    profile.Init(pack);
+                    profile.SetUpdateAvailable(false);
                     _appSettings.Save();
                 }
 
-                ShowToast($"Проверка «{pack.Name}» завершена — все файлы на месте", ToastType.Success);
+                ShowToast($"Сборка «{pack.Name}» переустановлена с нуля", ToastType.Success);
             }
             catch (OperationCanceledException)
             {
-                ShowToast("Проверка отменена", ToastType.Info);
+                ShowToast("Переустановка отменена", ToastType.Info);
             }
             catch (Exception ex)
             {
-                ShowToast($"Ошибка при проверке файлов: {ex.Message}", ToastType.Error, ex.ToString());
+                ShowToast($"Ошибка при переустановке: {ex.Message}", ToastType.Error, ex.ToString());
             }
             finally
             {
                 _homePage.ShowProgress(false);
                 _homePage.HideSyncError();
                 _homePage.SetActionsEnabled(true);
-                _ = CheckModpackStatusAsync(pack);
+                if (_selectedModpack != null)
+                {
+                    _ = CheckModpackStatusAsync(_selectedModpack.PackData);
+                }
+                _ = RefreshLocalChangesBadgeAsync(profile, pack);
             }
         }
 
@@ -525,13 +682,13 @@ namespace Pasyot_Launcher
             });
         }
 
-        private async Task<ManifestModel?> SyncWithRetryAsync(PasyotPack pack, IProgress<SyncProgressReport> progress)
+        private async Task<ManifestModel?> SyncWithRetryAsync(PasyotPack pack, IProgress<SyncProgressReport> progress, bool strict = false, ModpackSyncService.SyncOutcome? outcome = null)
         {
             while (true)
             {
                 try
                 {
-                    var result = await _syncService.SyncAsync(pack, _appSettings.ProfilesPath, progress);
+                    var result = await _syncService.SyncAsync(pack, _appSettings.ProfilesPath, progress, strict, outcome);
                     _homePage.HideSyncError();
                     return result;
                 }

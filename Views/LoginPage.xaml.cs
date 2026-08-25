@@ -30,6 +30,7 @@ namespace Pasyot_Launcher
             LoginBtn.IsEnabled = false;
             LoginBtn.Content = "Ожидание авторизации...";
             LoginStatusText.Visibility = Visibility.Visible;
+            ReopenSiteBtn.Visibility = Visibility.Visible;
 
             try
             {
@@ -45,6 +46,16 @@ namespace Pasyot_Launcher
                 LoginBtn.IsEnabled = true;
                 LoginBtn.Content = "Войти через Vedrow";
                 LoginStatusText.Visibility = Visibility.Collapsed;
+                ReopenSiteBtn.Visibility = Visibility.Collapsed;
+            }
+        }
+
+        private void ReopenSiteBtn_Click(object sender, RoutedEventArgs e)
+        {
+            if (!VedrowAuth.ReopenAuthPage())
+            {
+                (Application.Current.MainWindow as MainWindow)?.ShowToast(
+                    "Нет активной сессии авторизации для повторного открытия.", ToastType.Error);
             }
         }
     }

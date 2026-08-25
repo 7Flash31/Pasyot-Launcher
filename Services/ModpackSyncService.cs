@@ -34,6 +34,13 @@ namespace Pasyot_Launcher.Services
             public double Percentage { get; set; }
         }
 
+        // Filled in by SyncAsync so the caller can tell the player "N files weren't touched -
+        // they were changed locally" instead of that staying invisible.
+        public sealed class SyncOutcome
+        {
+            public int PreservedFiles { get; set; }
+        }
+
         private sealed class SyncProgressState
         {
             private readonly long _totalBytes;
@@ -129,14 +136,49 @@ namespace Pasyot_Launcher.Services
             if (manifest == null || manifest.Files == null) return null;
 
             string modpackDir = Path.Combine(profilesPath, pack.Name);
-            var changedFiles = await FindPendingFilesAsync(modpackDir, manifest.Files, null).ConfigureAwait(false);
+            var baseline = SyncBaseline.Load(modpackDir, pack.Name);
+            var (changedFiles, _) = await FindPendingFilesAsync(modpackDir, manifest.Files, baseline, strict: false, null).ConfigureAwait(false);
             return (manifest, changedFiles);
         }
 
-        public Task<ManifestModel?> SyncAsync(PasyotPack pack, string profilesPath, IProgress<SyncProgressReport>? progress = null)
-            => SyncAsync(pack, profilesPath, progress, allowManifestRetry: true);
+        // Files the sync would leave untouched on a normal (non-strict) run because they were
+        // edited locally since the launcher last wrote them - i.e. exactly what "Проверить файлы"
+        // would overwrite. Used to show the player what's been changed in their install.
+        public async Task<List<string>> GetLocallyModifiedFilesAsync(PasyotPack pack, string profilesPath)
+        {
+            string modpackDir = Path.Combine(profilesPath, pack.Name);
+            if (!Directory.Exists(modpackDir)) return new List<string>();
 
-        private async Task<ManifestModel?> SyncAsync(PasyotPack pack, string profilesPath, IProgress<SyncProgressReport>? progress, bool allowManifestRetry)
+            string manifestUrl = ResolveManifestUrl(pack);
+            var manifest = await _httpClient.GetFromJsonAsync<ManifestModel>(manifestUrl).ConfigureAwait(false);
+            if (manifest == null || manifest.Files == null) return new List<string>();
+
+            var baseline = SyncBaseline.Load(modpackDir, pack.Name);
+
+            return await Task.Run(() =>
+            {
+                var modified = new ConcurrentBag<string>();
+                Parallel.ForEach(manifest.Files, file =>
+                {
+                    if (ClassifyFile(modpackDir, file, baseline, strict: false) == FileSyncAction.PreserveLocal)
+                    {
+                        modified.Add(file.Path);
+                    }
+                });
+                return modified.OrderBy(p => p, StringComparer.OrdinalIgnoreCase).ToList();
+            }).ConfigureAwait(false);
+        }
+
+        // strict: true forces every tracked file to match the manifest exactly, overwriting any
+        // local edits (mod-caused drift included) instead of preserving them - used by the
+        // "verify files" action. Worlds/resourcepacks/shaderpacks the player added on their own
+        // are still never deleted, strict or not (see NeverCleanupGroups).
+        // outcome, if given, is filled in with how many tracked files were left untouched because
+        // they were changed locally - so the caller can tell the player instead of that staying invisible.
+        public Task<ManifestModel?> SyncAsync(PasyotPack pack, string profilesPath, IProgress<SyncProgressReport>? progress = null, bool strict = false, SyncOutcome? outcome = null)
+            => SyncAsync(pack, profilesPath, progress, allowManifestRetry: true, strict: strict, outcome: outcome);
+
+        private async Task<ManifestModel?> SyncAsync(PasyotPack pack, string profilesPath, IProgress<SyncProgressReport>? progress, bool allowManifestRetry, bool strict, SyncOutcome? outcome)
         {
             string manifestUrl = ResolveManifestUrl(pack);
 
@@ -148,25 +190,30 @@ namespace Pasyot_Launcher.Services
             string modpackDir = Path.Combine(profilesPath, pack.Name);
             Directory.CreateDirectory(modpackDir);
 
+            var baseline = SyncBaseline.Load(modpackDir, pack.Name);
+
             progress?.Report(new SyncProgressReport { Status = "Проверка локальных файлов...", Percentage = 0 });
-            var pending = await FindPendingFilesAsync(modpackDir, manifest.Files, progress).ConfigureAwait(false);
+            var (pending, preservedCount) = await FindPendingFilesAsync(modpackDir, manifest.Files, baseline, strict, progress).ConfigureAwait(false);
+            if (outcome != null) outcome.PreservedFiles = preservedCount;
 
             if (pending.Count == 0)
             {
-                CleanupRemovedFiles(modpackDir, manifest);
+                CleanupRemovedFiles(modpackDir, manifest, baseline);
+                baseline.Save();
                 progress?.Report(new SyncProgressReport { Status = "Завершено", Percentage = 100 });
                 return manifest;
             }
 
             if (manifest.Bundle != null && pending.Any(f => f.Bundled))
             {
-                await TryApplyBundleAsync(pack, manifest.Bundle, modpackDir, pending, progress).ConfigureAwait(false);
-                pending = await FindPendingFilesAsync(modpackDir, pending, progress).ConfigureAwait(false);
+                await TryApplyBundleAsync(pack, manifest.Bundle, modpackDir, pending, baseline, progress).ConfigureAwait(false);
+                (pending, _) = await FindPendingFilesAsync(modpackDir, pending, baseline, strict, progress).ConfigureAwait(false);
             }
 
             if (pending.Count == 0)
             {
-                CleanupRemovedFiles(modpackDir, manifest);
+                CleanupRemovedFiles(modpackDir, manifest, baseline);
+                baseline.Save();
                 progress?.Report(new SyncProgressReport { Status = "Завершено", Percentage = 100 });
                 return manifest;
             }
@@ -192,7 +239,7 @@ namespace Pasyot_Launcher.Services
 
                 try
                 {
-                    await DownloadFileAsync(pack, modpackDir, file, state, cts.Token).ConfigureAwait(false);
+                    await DownloadFileAsync(pack, modpackDir, file, state, baseline, cts.Token).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (cts.IsCancellationRequested)
                 {
@@ -219,7 +266,7 @@ namespace Pasyot_Launcher.Services
 
             if (Volatile.Read(ref manifestStale) == 1)
             {
-                return await SyncAsync(pack, profilesPath, progress, allowManifestRetry: false).ConfigureAwait(false);
+                return await SyncAsync(pack, profilesPath, progress, allowManifestRetry: false, strict: strict, outcome: outcome).ConfigureAwait(false);
             }
 
             if (missingFiles.Count > 0)
@@ -227,24 +274,102 @@ namespace Pasyot_Launcher.Services
                 throw new Exception($"Не удалось загрузить {missingFiles.Count} файл(ов): {string.Join(", ", missingFiles)}");
             }
 
-            CleanupRemovedFiles(modpackDir, manifest);
+            CleanupRemovedFiles(modpackDir, manifest, baseline);
+            baseline.Save();
 
             progress?.Report(new SyncProgressReport { Status = "Завершено", Percentage = 100 });
             return manifest;
         }
 
-        private Task<List<ManifestFile>> FindPendingFilesAsync(string modpackDir, IReadOnlyCollection<ManifestFile> files, IProgress<SyncProgressReport>? progress)
+        private enum FileSyncAction
+        {
+            UpToDate,
+            NeedsDownload,
+            PreserveLocal
+        }
+
+        // Classifies a manifest file against what's on disk and what we last wrote there
+        // ourselves (the baseline). A local edit the player or a mod made since our last write
+        // is left untouched instead of being clobbered by the server's version - unless strict
+        // is set, in which case the manifest always wins (used by "verify files"). Engine/binary
+        // content (see AlwaysStrictGroups) always behaves as if strict, in both directions: a
+        // mod jar with a wrong hash is corruption/mismatch, never an intentional edit worth
+        // keeping, so it's always corrected.
+        private FileSyncAction ClassifyFile(string modpackDir, ManifestFile file, SyncBaseline baseline, bool strict)
+        {
+            string destinationPath = Path.Combine(modpackDir, file.Path);
+            if (!File.Exists(destinationPath)) return FileSyncAction.NeedsDownload;
+
+            string localHash = CalculateSha256(destinationPath);
+            if (localHash.Equals(file.Sha256, StringComparison.OrdinalIgnoreCase))
+            {
+                baseline.Set(file.Path, localHash);
+                return FileSyncAction.UpToDate;
+            }
+
+            if (strict || AlwaysStrictGroups.Contains(file.Group)) return FileSyncAction.NeedsDownload;
+
+            if (LooksCorrupted(destinationPath, file.Size))
+            {
+                // A zero-byte file or a .jar/.zip that won't even open as an archive is never a
+                // deliberate edit worth keeping - always heal it, no matter what group it's in.
+                return FileSyncAction.NeedsDownload;
+            }
+
+            string? lastSynced = baseline.Get(file.Path);
+            if (lastSynced == null || lastSynced.Equals(localHash, StringComparison.OrdinalIgnoreCase))
+            {
+                // Never synced before (safe default: deliver official content), or unchanged
+                // since we last wrote it - either way the server's new version applies.
+                return FileSyncAction.NeedsDownload;
+            }
+
+            return FileSyncAction.PreserveLocal;
+        }
+
+        private static bool LooksCorrupted(string path, long expectedSize)
+        {
+            try
+            {
+                var info = new FileInfo(path);
+                if (expectedSize > 0 && info.Length == 0) return true;
+
+                string ext = Path.GetExtension(path);
+                if (ext.Equals(".jar", StringComparison.OrdinalIgnoreCase) ||
+                    ext.Equals(".zip", StringComparison.OrdinalIgnoreCase))
+                {
+                    using var archive = ZipFile.OpenRead(path);
+                    _ = archive.Entries.Count;
+                }
+
+                return false;
+            }
+            catch
+            {
+                return true;
+            }
+        }
+
+        private Task<(List<ManifestFile> Pending, int Preserved)> FindPendingFilesAsync(string modpackDir, IReadOnlyCollection<ManifestFile> files, SyncBaseline baseline, bool strict, IProgress<SyncProgressReport>? progress)
         {
             return Task.Run(() =>
             {
                 var pending = new ConcurrentBag<ManifestFile>();
+                int preserved = 0;
                 int checkedCount = 0;
                 long lastReportTicks = 0;
 
                 Parallel.ForEach(files, new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount }, file =>
                 {
-                    if (!IsUpToDate(modpackDir, file))
-                        pending.Add(file);
+                    switch (ClassifyFile(modpackDir, file, baseline, strict))
+                    {
+                        case FileSyncAction.NeedsDownload:
+                            pending.Add(file);
+                            break;
+                        case FileSyncAction.PreserveLocal:
+                            Interlocked.Increment(ref preserved);
+                            break;
+                    }
 
                     int done = Interlocked.Increment(ref checkedCount);
                     long nowTicks = Environment.TickCount64;
@@ -259,18 +384,11 @@ namespace Pasyot_Launcher.Services
                     });
                 });
 
-                return pending.ToList();
+                return (pending.ToList(), preserved);
             });
         }
 
-        private bool IsUpToDate(string modpackDir, ManifestFile file)
-        {
-            string destinationPath = Path.Combine(modpackDir, file.Path);
-            return File.Exists(destinationPath) &&
-                   CalculateSha256(destinationPath).Equals(file.Sha256, StringComparison.OrdinalIgnoreCase);
-        }
-
-        private async Task DownloadFileAsync(PasyotPack pack, string modpackDir, ManifestFile file, SyncProgressState state, CancellationToken ct)
+        private async Task DownloadFileAsync(PasyotPack pack, string modpackDir, ManifestFile file, SyncProgressState state, SyncBaseline baseline, CancellationToken ct)
         {
             string fileName = Path.GetFileName(file.Path);
             string destinationPath = Path.Combine(modpackDir, file.Path);
@@ -305,6 +423,7 @@ namespace Pasyot_Launcher.Services
                 }
 
                 File.Move(tempPath, destinationPath, overwrite: true);
+                baseline.Set(file.Path, file.Sha256);
                 state.ReportFileDone(fileName);
             }
             catch
@@ -316,7 +435,7 @@ namespace Pasyot_Launcher.Services
 
         private static readonly TimeSpan BundleStageTimeout = TimeSpan.FromMinutes(5);
 
-        private async Task TryApplyBundleAsync(PasyotPack pack, ManifestBundle bundle, string modpackDir, List<ManifestFile> pending, IProgress<SyncProgressReport>? progress)
+        private async Task TryApplyBundleAsync(PasyotPack pack, ManifestBundle bundle, string modpackDir, List<ManifestFile> pending, SyncBaseline baseline, IProgress<SyncProgressReport>? progress)
         {
             if (!string.Equals(bundle.Format, "tar+gzip", StringComparison.OrdinalIgnoreCase))
                 return;
@@ -386,6 +505,7 @@ namespace Pasyot_Launcher.Services
                     string destinationPath = Path.Combine(modpackDir, file.Path);
                     Directory.CreateDirectory(Path.GetDirectoryName(destinationPath)!);
                     File.Move(extractedPath, destinationPath, overwrite: true);
+                    baseline.Set(file.Path, file.Sha256);
                 }
             }
             catch
@@ -398,7 +518,24 @@ namespace Pasyot_Launcher.Services
             }
         }
 
-        private static void CleanupRemovedFiles(string modpackDir, ManifestModel manifest)
+        // These groups are player content, never something the sync should delete just because
+        // the server manifest doesn't happen to list a given file: worlds the player created or
+        // played in, and resource/shader packs the player added on top of the official ones.
+        private static readonly HashSet<string> NeverCleanupGroups = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "saves", "resourcepacks", "shaderpacks"
+        };
+
+        // Engine/binary content: nobody hand-edits a mod jar, so a hash mismatch here is always
+        // corruption or a stale copy, never an intentional change worth keeping - and a mod the
+        // curator removed from the pack must actually disappear (stale/incompatible jars crash
+        // or conflict), not linger because it happens to differ from some remembered baseline.
+        private static readonly HashSet<string> AlwaysStrictGroups = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "mods", "libraries", "versions", "assets"
+        };
+
+        private void CleanupRemovedFiles(string modpackDir, ManifestModel manifest, SyncBaseline baseline)
         {
             if (manifest.Groups == null || manifest.Groups.Count == 0) return;
 
@@ -408,6 +545,9 @@ namespace Pasyot_Launcher.Services
 
             foreach (var group in manifest.Groups)
             {
+                if (NeverCleanupGroups.Contains(group.Name)) continue;
+                bool alwaysStrict = AlwaysStrictGroups.Contains(group.Name);
+
                 bool isRoot = string.IsNullOrEmpty(group.Name);
                 string groupDir = isRoot ? modpackDir : Path.Combine(modpackDir, group.Name);
                 if (!Directory.Exists(groupDir)) continue;
@@ -417,13 +557,37 @@ namespace Pasyot_Launcher.Services
                 foreach (string filePath in Directory.EnumerateFiles(groupDir, "*", searchOption))
                 {
                     if (filePath.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase)) continue;
+                    if (keepPaths.Contains(Path.GetFullPath(filePath))) continue;
 
-                    if (!keepPaths.Contains(Path.GetFullPath(filePath)))
+                    if (!alwaysStrict && !WasShippedUnmodified(modpackDir, filePath, baseline))
                     {
-                        try { File.Delete(filePath); }
-                        catch {  }
+                        // Not engine content, and either the player added this file themselves
+                        // (no baseline record) or edited what we shipped (hash moved since) -
+                        // leave it, same as any other locally-changed tracked file.
+                        continue;
                     }
+
+                    try { File.Delete(filePath); }
+                    catch { }
                 }
+            }
+        }
+
+        // True only when we're sure this exact file is our own, untouched official copy - safe
+        // to delete now that the curator dropped it from the pack.
+        private bool WasShippedUnmodified(string modpackDir, string absoluteFilePath, SyncBaseline baseline)
+        {
+            string relativePath = Path.GetRelativePath(modpackDir, absoluteFilePath).Replace(Path.DirectorySeparatorChar, '/');
+            string? lastSynced = baseline.Get(relativePath);
+            if (lastSynced == null) return false;
+
+            try
+            {
+                return lastSynced.Equals(CalculateSha256(absoluteFilePath), StringComparison.OrdinalIgnoreCase);
+            }
+            catch
+            {
+                return false;
             }
         }
 

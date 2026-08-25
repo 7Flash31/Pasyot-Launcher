@@ -24,6 +24,12 @@ namespace Pasyot_Launcher.Models
         [JsonPropertyName("minecraft")]
         public string? Minecraft { get; set; }
 
+        [JsonPropertyName("server_ip")]
+        public string? ServerIp { get; set; }
+
+        [JsonPropertyName("icon_sha256")]
+        public string? IconSha256 { get; set; }
+
         [JsonPropertyName("version")]
         public int Version { get; set; }
 

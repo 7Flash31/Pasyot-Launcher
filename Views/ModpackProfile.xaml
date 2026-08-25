@@ -46,17 +46,23 @@
 
         <StackPanel>
             <Grid>
-                <Ellipse Width="44" Height="44" Fill="{StaticResource SurfaceAltBrush}" HorizontalAlignment="Left"/>
+                <Ellipse x:Name="IconEllipse" Width="44" Height="44" Fill="{StaticResource SurfaceAltBrush}" HorizontalAlignment="Left"/>
 
-                <Button Grid.Column="0"
-                        x:Name="DeleteButton"
-                        Style="{StaticResource DeleteButtonStyle}"
-                        HorizontalAlignment="Right"
-                        VerticalAlignment="Top"
-                        ToolTip="Удалить сборку"
-                        Click="DeleteButton_Click">
-                    <Path Data="{StaticResource IconClose}" Style="{StaticResource OutlineIconStyle}" Width="12" Height="12" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
-                </Button>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top">
+                    <Button x:Name="SettingsButton"
+                            Style="{StaticResource DeleteButtonStyle}"
+                            ToolTip="Настройки сборки"
+                            Click="SettingsButton_Click">
+                        <Path Data="{StaticResource IconSettings}" Style="{StaticResource OutlineIconStyle}" Width="14" Height="14" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
+                    </Button>
+
+                    <Button x:Name="DeleteButton"
+                            Style="{StaticResource DeleteButtonStyle}"
+                            ToolTip="Удалить сборку"
+                            Click="DeleteButton_Click">
+                        <Path Data="{StaticResource IconClose}" Style="{StaticResource OutlineIconStyle}" Width="12" Height="12" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
+                    </Button>
+                </StackPanel>
             </Grid>
 
             <TextBlock x:Name="ModpackName" Text="Sample Modpack"
@@ -95,6 +101,16 @@
                     Visibility="Collapsed"
                     ToolTip="Доступно обновление">
                 <TextBlock Text="ОБНОВЛЕНИЕ" FontSize="9" FontWeight="Bold" Foreground="{StaticResource SuccessBrush}"/>
+            </Border>
+
+            <Border x:Name="LocalChangesBadge"
+                    Background="{StaticResource SurfaceAltBrush}"
+                    CornerRadius="4"
+                    Padding="6,2"
+                    Margin="0,6,0,0"
+                    HorizontalAlignment="Left"
+                    Visibility="Collapsed">
+                <TextBlock x:Name="LocalChangesBadgeText" Text="1 ФАЙЛ ИЗМЕНЁН" FontSize="9" FontWeight="Bold" Foreground="{StaticResource TextSecondaryBrush}"/>
             </Border>
         </StackPanel>
     </Border>

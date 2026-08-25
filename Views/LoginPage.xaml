@@ -43,6 +43,15 @@
                            HorizontalAlignment="Center"
                            Margin="0,12,0,0"
                            Visibility="Collapsed"/>
+
+                <Button x:Name="ReopenSiteBtn"
+                        Content="Открыть сайт заново"
+                        Height="36"
+                        Style="{StaticResource SecondaryButtonStyle}"
+                        FontSize="13"
+                        Margin="0,10,0,0"
+                        Visibility="Collapsed"
+                        Click="ReopenSiteBtn_Click"/>
             </StackPanel>
         </Border>
 

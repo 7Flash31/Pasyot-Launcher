@@ -50,7 +50,7 @@ namespace Pasyot_Launcher.Services
             _httpClient = httpClient;
         }
 
-        public async Task<Process> LaunchAsync(PasyotPack pack, AppSettings settings, string playerName, string? loader, string? minecraftVersion, IProgress<SyncProgressReport>? progress = null)
+        public async Task<Process> LaunchAsync(PasyotPack pack, AppSettings settings, string playerName, string? loader, string? minecraftVersion, IProgress<SyncProgressReport>? progress = null, bool connectDirectly = false)
         {
             string gameDirectory = Path.Combine(settings.ProfilesPath, pack.Name);
             var path = new MinecraftPath(gameDirectory);
@@ -121,6 +121,11 @@ namespace Pasyot_Launcher.Services
 
             EnsureCustomSkinLoaderConfig(gameDirectory, pack.Server);
 
+            if (!string.IsNullOrWhiteSpace(pack.ServerIp))
+            {
+                EnsureServerInList(gameDirectory, pack.Name, pack.ServerIp);
+            }
+
             progress?.Report(new SyncProgressReport { Status = "Подготовка параметров запуска...", Percentage = 90 });
             string resolvedPlayerName = string.IsNullOrWhiteSpace(playerName) ? "Player" : playerName;
             var launchOptions = new MLaunchOption
@@ -132,6 +137,13 @@ namespace Pasyot_Launcher.Services
                 },
                 Path = path
             };
+
+            if (connectDirectly && !string.IsNullOrWhiteSpace(pack.ServerIp))
+            {
+                (string host, int port) = ParseServerAddress(pack.ServerIp);
+                launchOptions.ServerIp = host;
+                launchOptions.ServerPort = port;
+            }
 
             if (!string.IsNullOrWhiteSpace(settings.JavaArgs))
             {
@@ -267,6 +279,32 @@ namespace Pasyot_Launcher.Services
             {
                 Debug.WriteLine($"[EnsureCustomSkinLoaderConfig] {ex}");
             }
+        }
+
+        private static void EnsureServerInList(string gameDirectory, string packName, string serverIp)
+        {
+            try
+            {
+                string serversDatPath = Path.Combine(gameDirectory, "servers.dat");
+                NbtServerList.AddOrUpdateServer(serversDatPath, packName, serverIp);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[EnsureServerInList] {ex}");
+            }
+        }
+
+        private static (string Host, int Port) ParseServerAddress(string serverIp)
+        {
+            string address = serverIp.Trim();
+            int colonIndex = address.LastIndexOf(':');
+
+            if (colonIndex > 0 && int.TryParse(address[(colonIndex + 1)..], out int port))
+            {
+                return (address[..colonIndex], port);
+            }
+
+            return (address, 25565);
         }
 
         private static string OfflinePlayerUuid(string username)

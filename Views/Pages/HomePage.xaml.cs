@@ -3,6 +3,7 @@ using System;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 
 namespace Pasyot_Launcher.Views.Pages
 {
@@ -13,6 +14,8 @@ namespace Pasyot_Launcher.Views.Pages
         public event EventHandler? VerifyRequested;
         public event EventHandler? RetryNowRequested;
         public event EventHandler? CancelRetryRequested;
+        public event EventHandler? RefreshServerStatusRequested;
+        public event EventHandler? ConnectRequested;
 
         private bool _suppressRamChanged = true;
 
@@ -22,8 +25,12 @@ namespace Pasyot_Launcher.Views.Pages
             RefreshRamChip();
         }
 
+        private static readonly Brush DefaultIconBrush = (Brush)Application.Current.Resources["SurfaceAltBrush"];
+
         public void SetSelectedPack(PasyotPack? pack)
         {
+            PackIconEllipse.Fill = DefaultIconBrush;
+
             if (pack == null)
             {
                 PackNameText.Text = "Сборка не выбрана";
@@ -31,12 +38,15 @@ namespace Pasyot_Launcher.Views.Pages
                 LoaderBadge.Visibility = Visibility.Collapsed;
                 OpenFolderButton.IsEnabled = false;
                 VerifyButton.IsEnabled = false;
+                ConnectButton.Visibility = Visibility.Collapsed;
                 SetServerStatus(null);
                 return;
             }
 
             PackNameText.Text = pack.Name;
             PackVersionText.Text = !string.IsNullOrWhiteSpace(pack.Minecraft) ? pack.Minecraft : $"v{pack.Version}";
+
+            ConnectButton.Visibility = string.IsNullOrWhiteSpace(pack.ServerIp) ? Visibility.Collapsed : Visibility.Visible;
 
             if (string.IsNullOrWhiteSpace(pack.Loader))
             {
@@ -52,15 +62,22 @@ namespace Pasyot_Launcher.Views.Pages
             VerifyButton.IsEnabled = true;
         }
 
+        public void SetIcon(BitmapImage icon)
+        {
+            PackIconEllipse.Fill = new ImageBrush(icon) { Stretch = Stretch.UniformToFill };
+        }
+
         public void SetPlayButtonState(string content, bool enabled)
         {
             LaunchButton.Content = content;
             LaunchButton.IsEnabled = enabled;
+            ConnectButton.IsEnabled = enabled;
         }
 
         public void SetPlayButtonEnabled(bool enabled)
         {
             LaunchButton.IsEnabled = enabled;
+            ConnectButton.IsEnabled = enabled;
         }
 
         public void SetActionsEnabled(bool enabled)
@@ -104,6 +121,7 @@ namespace Pasyot_Launcher.Views.Pages
 
         private void RetryNowButton_Click(object sender, RoutedEventArgs e) => RetryNowRequested?.Invoke(this, EventArgs.Empty);
         private void CancelRetryButton_Click(object sender, RoutedEventArgs e) => CancelRetryRequested?.Invoke(this, EventArgs.Empty);
+        private void RefreshServerStatusButton_Click(object sender, RoutedEventArgs e) => RefreshServerStatusRequested?.Invoke(this, EventArgs.Empty);
 
         public void SetServerStatus(bool? online)
         {
@@ -150,6 +168,7 @@ namespace Pasyot_Launcher.Views.Pages
         }
 
         private void LaunchButton_Click(object sender, RoutedEventArgs e) => PlayRequested?.Invoke(this, EventArgs.Empty);
+        private void ConnectButton_Click(object sender, RoutedEventArgs e) => ConnectRequested?.Invoke(this, EventArgs.Empty);
         private void OpenFolderButton_Click(object sender, RoutedEventArgs e) => OpenFolderRequested?.Invoke(this, EventArgs.Empty);
         private void VerifyButton_Click(object sender, RoutedEventArgs e) => VerifyRequested?.Invoke(this, EventArgs.Empty);
 

@@ -22,6 +22,7 @@ namespace Pasyot_Launcher.Services
         public static event EventHandler<UserProfile>? OnAuthCompleted;
 
         private static HttpListener? _httpListener;
+        private static string? _currentAuthUrl;
 
         public static async Task StartAuthAsync()
         {
@@ -41,11 +42,8 @@ namespace Pasyot_Launcher.Services
                              $"&code_challenge_method=S256" +
                              $"&nonce={Uri.EscapeDataString(nonce)}";
 
-            Process.Start(new ProcessStartInfo
-            {
-                FileName = authUrl,
-                UseShellExecute = true
-            });
+            _currentAuthUrl = authUrl;
+            OpenAuthUrl(authUrl);
 
             try
             {
@@ -142,9 +140,13 @@ namespace Pasyot_Launcher.Services
             }
         }
 
-        public static async Task<string?> RefreshAccessTokenAsync(string refreshToken)
+        // Vedrow rotates the refresh token on every use (the old one stops working once a refresh
+        // succeeds), so the caller must persist whatever refresh_token comes back here - reusing
+        // the old one silently invalidates the session on the *next* refresh (RFC 6749 §6: if the
+        // server issues a new refresh token, the old one must be discarded).
+        public static async Task<(string? AccessToken, string? RefreshToken)> RefreshAccessTokenAsync(string refreshToken)
         {
-            if (string.IsNullOrEmpty(refreshToken)) return null;
+            if (string.IsNullOrEmpty(refreshToken)) return (null, null);
 
             try
             {
@@ -160,19 +162,21 @@ namespace Pasyot_Launcher.Services
                     var content = new FormUrlEncodedContent(bodyParams);
                     HttpResponseMessage response = await client.PostAsync($"{VedrowApiUrl}/oauth/token", content);
 
-                    if (!response.IsSuccessStatusCode) return null;
+                    if (!response.IsSuccessStatusCode) return (null, null);
 
                     string json = await response.Content.ReadAsStringAsync();
                     using (JsonDocument doc = JsonDocument.Parse(json))
                     {
                         JsonElement root = doc.RootElement;
-                        return root.GetProperty("access_token").GetString();
+                        string? newAccessToken = root.GetProperty("access_token").GetString();
+                        string? newRefreshToken = root.TryGetProperty("refresh_token", out var rt) ? rt.GetString() : null;
+                        return (newAccessToken, newRefreshToken);
                     }
                 }
             }
             catch
             {
-                return null;
+                return (null, null);
             }
         }
 
@@ -193,13 +197,13 @@ namespace Pasyot_Launcher.Services
                     {
                         if (!string.IsNullOrEmpty(session.RefreshToken))
                         {
-                            string? newAccessToken = await RefreshAccessTokenAsync(session.RefreshToken);
+                            (string? newAccessToken, string? newRefreshToken) = await RefreshAccessTokenAsync(session.RefreshToken);
                             if (!string.IsNullOrEmpty(newAccessToken))
                             {
                                 UserProfile? refreshedProfile = await FetchUserInfoAsync(newAccessToken);
                                 if (refreshedProfile != null)
                                 {
-                                    AuthService.SaveSession(newAccessToken, session.RefreshToken, refreshedProfile);
+                                    AuthService.SaveSession(newAccessToken, newRefreshToken ?? session.RefreshToken, refreshedProfile);
                                     return (refreshedProfile, false);
                                 }
                             }
@@ -388,6 +392,23 @@ namespace Pasyot_Launcher.Services
                 _httpListener.Stop();
                 _httpListener.Close();
             }
+            _currentAuthUrl = null;
+        }
+
+        public static bool ReopenAuthPage()
+        {
+            if (string.IsNullOrEmpty(_currentAuthUrl)) return false;
+            OpenAuthUrl(_currentAuthUrl);
+            return true;
+        }
+
+        private static void OpenAuthUrl(string authUrl)
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = authUrl,
+                UseShellExecute = true
+            });
         }
 
         private static string GenerateCodeVerifier()

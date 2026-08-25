@@ -18,7 +18,7 @@
             <Border Style="{StaticResource CardBorderStyle}" Padding="28" MinWidth="380" HorizontalAlignment="Center">
                 <StackPanel HorizontalAlignment="Center">
 
-                    <Ellipse Width="72" Height="72" Fill="{StaticResource SurfaceAltBrush}" HorizontalAlignment="Center"/>
+                    <Ellipse x:Name="PackIconEllipse" Width="72" Height="72" Fill="{StaticResource SurfaceAltBrush}" HorizontalAlignment="Center"/>
 
                     <TextBlock x:Name="PackNameText"
                                Text="Сборка не выбрана"
@@ -38,6 +38,14 @@
                     <StackPanel x:Name="ServerStatusPanel" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,8,0,0" Visibility="Collapsed">
                         <Ellipse x:Name="ServerStatusDot" Width="7" Height="7" Fill="{StaticResource TextMutedBrush}" VerticalAlignment="Center"/>
                         <TextBlock x:Name="ServerStatusText" Text="Проверка сервера..." Foreground="{StaticResource TextMutedBrush}" FontSize="11" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                        <Button x:Name="RefreshServerStatusButton"
+                                Style="{StaticResource IconButtonStyle}"
+                                Width="20" Height="20"
+                                Margin="4,0,0,0"
+                                ToolTip="Обновить статус сервера"
+                                Click="RefreshServerStatusButton_Click">
+                            <TextBlock Text="&#8635;" FontSize="12" Foreground="{StaticResource TextMutedBrush}"/>
+                        </Button>
                     </StackPanel>
 
                     <Button x:Name="LaunchButton"
@@ -46,6 +54,14 @@
                             Height="54" Width="220"
                             Margin="0,20,0,0"
                             Click="LaunchButton_Click"/>
+
+                    <Button x:Name="ConnectButton"
+                            Content="Подключиться к серверу"
+                            Style="{StaticResource SecondaryButtonStyle}"
+                            Height="34" Width="220"
+                            Margin="0,8,0,0"
+                            Visibility="Collapsed"
+                            Click="ConnectButton_Click"/>
 
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,12,0,0">
                         <Button x:Name="OpenFolderButton" Content="Открыть папку" Style="{StaticResource SecondaryButtonStyle}" Height="32" Width="120" Click="OpenFolderButton_Click"/>
