@@ -185,48 +185,83 @@ namespace Pasyot_Launcher.Services
             return null;
         }
 
+        private static bool HasCustomSkinLoaderMod(string gameDirectory)
+        {
+            string modsDir = Path.Combine(gameDirectory, "mods");
+            if (!Directory.Exists(modsDir)) return false;
+
+            return Directory.EnumerateFiles(modsDir, "*.jar")
+                .Any(f => Path.GetFileName(f).Contains("customskinloader", StringComparison.OrdinalIgnoreCase));
+        }
+
         private static void EnsureCustomSkinLoaderConfig(string gameDirectory, string backendServer)
         {
             if (string.IsNullOrWhiteSpace(backendServer)) return;
 
             string? configPath = FindCustomSkinLoaderConfig(gameDirectory);
-            if (configPath == null) return;
+
+            // On the very first launch the mod hasn't run yet, so it hasn't written its own
+            // config - patching "nothing" would silently skip our entry for that whole session.
+            // Seed a minimal config ourselves in that case so Pasyot skins work from launch #1.
+            bool seedingNewConfig = configPath == null;
+            if (seedingNewConfig)
+            {
+                if (!HasCustomSkinLoaderMod(gameDirectory)) return;
+                configPath = Path.Combine(gameDirectory, "CustomSkinLoader", "CustomSkinLoader.json");
+            }
 
             string root = backendServer.TrimEnd('/') + "/customskinapi/";
 
             try
             {
-                JsonObject? config = JsonNode.Parse(File.ReadAllText(configPath)) as JsonObject;
-                if (config == null) return;
+                JsonObject? config;
 
-                if (config["loadlist"] is not JsonArray loadlist)
+                if (seedingNewConfig)
                 {
-                    loadlist = new JsonArray();
-                    config["loadlist"] = loadlist;
-                }
-
-                JsonObject? existing = loadlist
-                    .OfType<JsonObject>()
-                    .FirstOrDefault(e => (string?)e["name"] == "Pasyot");
-
-                if (existing != null)
-                {
-                    existing["type"] = "CustomSkinAPI";
-                    existing["root"] = root;
+                    config = new JsonObject
+                    {
+                        ["loadlist"] = new JsonArray
+                        {
+                            new JsonObject { ["name"] = "Pasyot", ["type"] = "CustomSkinAPI", ["root"] = root },
+                            new JsonObject { ["name"] = "Mojang", ["type"] = "MojangAPI" }
+                        }
+                    };
                 }
                 else
                 {
-                    loadlist.Insert(0, new JsonObject
+                    config = JsonNode.Parse(File.ReadAllText(configPath!)) as JsonObject;
+                    if (config == null) return;
+
+                    if (config["loadlist"] is not JsonArray loadlist)
                     {
-                        ["name"] = "Pasyot",
-                        ["type"] = "CustomSkinAPI",
-                        ["root"] = root
-                    });
+                        loadlist = new JsonArray();
+                        config["loadlist"] = loadlist;
+                    }
+
+                    JsonObject? existing = loadlist
+                        .OfType<JsonObject>()
+                        .FirstOrDefault(e => (string?)e["name"] == "Pasyot");
+
+                    if (existing != null)
+                    {
+                        existing["type"] = "CustomSkinAPI";
+                        existing["root"] = root;
+                    }
+                    else
+                    {
+                        loadlist.Insert(0, new JsonObject
+                        {
+                            ["name"] = "Pasyot",
+                            ["type"] = "CustomSkinAPI",
+                            ["root"] = root
+                        });
+                    }
                 }
 
+                Directory.CreateDirectory(Path.GetDirectoryName(configPath!)!);
                 string tmpPath = configPath + ".tmp";
                 File.WriteAllText(tmpPath, config.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
-                File.Move(tmpPath, configPath, overwrite: true);
+                File.Move(tmpPath, configPath!, overwrite: true);
             }
             catch (Exception ex)
             {
