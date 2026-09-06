@@ -1,4 +1,4 @@
-using Microsoft.Win32;
+﻿using Microsoft.Win32;
 using Pasyot_Launcher.Services;
 using System;
 using System.Net.Http;

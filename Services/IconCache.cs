@@ -1,4 +1,4 @@
-using Pasyot_Launcher.Models;
+﻿using Pasyot_Launcher.Models;
 using System;
 using System.Collections.Concurrent;
 using System.IO;
@@ -8,9 +8,6 @@ using System.Windows.Media.Imaging;
 
 namespace Pasyot_Launcher.Services
 {
-    // Downloads and decodes a modpack's icon once, then serves it from memory for every card/page
-    // that asks for the same sha256 - icons don't change without a new hash, so there's nothing to
-    // invalidate.
     internal static class IconCache
     {
         private static readonly ConcurrentDictionary<string, Task<BitmapImage?>> Cache = new();

@@ -140,10 +140,6 @@ namespace Pasyot_Launcher.Services
             }
         }
 
-        // Vedrow rotates the refresh token on every use (the old one stops working once a refresh
-        // succeeds), so the caller must persist whatever refresh_token comes back here - reusing
-        // the old one silently invalidates the session on the *next* refresh (RFC 6749 §6: if the
-        // server issues a new refresh token, the old one must be discarded).
         public static async Task<(string? AccessToken, string? RefreshToken)> RefreshAccessTokenAsync(string refreshToken)
         {
             if (string.IsNullOrEmpty(refreshToken)) return (null, null);

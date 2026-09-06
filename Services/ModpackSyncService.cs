@@ -1,4 +1,4 @@
-using Pasyot_Launcher.Models;
+﻿using Pasyot_Launcher.Models;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -34,8 +34,6 @@ namespace Pasyot_Launcher.Services
             public double Percentage { get; set; }
         }
 
-        // Filled in by SyncAsync so the caller can tell the player "N files weren't touched -
-        // they were changed locally" instead of that staying invisible.
         public sealed class SyncOutcome
         {
             public int PreservedFiles { get; set; }
@@ -141,9 +139,6 @@ namespace Pasyot_Launcher.Services
             return (manifest, changedFiles);
         }
 
-        // Files the sync would leave untouched on a normal (non-strict) run because they were
-        // edited locally since the launcher last wrote them - i.e. exactly what "Проверить файлы"
-        // would overwrite. Used to show the player what's been changed in their install.
         public async Task<List<string>> GetLocallyModifiedFilesAsync(PasyotPack pack, string profilesPath)
         {
             string modpackDir = Path.Combine(profilesPath, pack.Name);
@@ -169,12 +164,6 @@ namespace Pasyot_Launcher.Services
             }).ConfigureAwait(false);
         }
 
-        // strict: true forces every tracked file to match the manifest exactly, overwriting any
-        // local edits (mod-caused drift included) instead of preserving them - used by the
-        // "verify files" action. Worlds/resourcepacks/shaderpacks the player added on their own
-        // are still never deleted, strict or not (see NeverCleanupGroups).
-        // outcome, if given, is filled in with how many tracked files were left untouched because
-        // they were changed locally - so the caller can tell the player instead of that staying invisible.
         public Task<ManifestModel?> SyncAsync(PasyotPack pack, string profilesPath, IProgress<SyncProgressReport>? progress = null, bool strict = false, SyncOutcome? outcome = null)
             => SyncAsync(pack, profilesPath, progress, allowManifestRetry: true, strict: strict, outcome: outcome);
 
@@ -288,13 +277,6 @@ namespace Pasyot_Launcher.Services
             PreserveLocal
         }
 
-        // Classifies a manifest file against what's on disk and what we last wrote there
-        // ourselves (the baseline). A local edit the player or a mod made since our last write
-        // is left untouched instead of being clobbered by the server's version - unless strict
-        // is set, in which case the manifest always wins (used by "verify files"). Engine/binary
-        // content (see AlwaysStrictGroups) always behaves as if strict, in both directions: a
-        // mod jar with a wrong hash is corruption/mismatch, never an intentional edit worth
-        // keeping, so it's always corrected.
         private FileSyncAction ClassifyFile(string modpackDir, ManifestFile file, SyncBaseline baseline, bool strict)
         {
             string destinationPath = Path.Combine(modpackDir, file.Path);
@@ -311,16 +293,12 @@ namespace Pasyot_Launcher.Services
 
             if (LooksCorrupted(destinationPath, file.Size))
             {
-                // A zero-byte file or a .jar/.zip that won't even open as an archive is never a
-                // deliberate edit worth keeping - always heal it, no matter what group it's in.
                 return FileSyncAction.NeedsDownload;
             }
 
             string? lastSynced = baseline.Get(file.Path);
             if (lastSynced == null || lastSynced.Equals(localHash, StringComparison.OrdinalIgnoreCase))
             {
-                // Never synced before (safe default: deliver official content), or unchanged
-                // since we last wrote it - either way the server's new version applies.
                 return FileSyncAction.NeedsDownload;
             }
 
@@ -518,18 +496,11 @@ namespace Pasyot_Launcher.Services
             }
         }
 
-        // These groups are player content, never something the sync should delete just because
-        // the server manifest doesn't happen to list a given file: worlds the player created or
-        // played in, and resource/shader packs the player added on top of the official ones.
         private static readonly HashSet<string> NeverCleanupGroups = new(StringComparer.OrdinalIgnoreCase)
         {
             "saves", "resourcepacks", "shaderpacks"
         };
 
-        // Engine/binary content: nobody hand-edits a mod jar, so a hash mismatch here is always
-        // corruption or a stale copy, never an intentional change worth keeping - and a mod the
-        // curator removed from the pack must actually disappear (stale/incompatible jars crash
-        // or conflict), not linger because it happens to differ from some remembered baseline.
         private static readonly HashSet<string> AlwaysStrictGroups = new(StringComparer.OrdinalIgnoreCase)
         {
             "mods", "libraries", "versions", "assets"
@@ -561,9 +532,6 @@ namespace Pasyot_Launcher.Services
 
                     if (!alwaysStrict && !WasShippedUnmodified(modpackDir, filePath, baseline))
                     {
-                        // Not engine content, and either the player added this file themselves
-                        // (no baseline record) or edited what we shipped (hash moved since) -
-                        // leave it, same as any other locally-changed tracked file.
                         continue;
                     }
 
@@ -573,8 +541,6 @@ namespace Pasyot_Launcher.Services
             }
         }
 
-        // True only when we're sure this exact file is our own, untouched official copy - safe
-        // to delete now that the curator dropped it from the pack.
         private bool WasShippedUnmodified(string modpackDir, string absoluteFilePath, SyncBaseline baseline)
         {
             string relativePath = Path.GetRelativePath(modpackDir, absoluteFilePath).Replace(Path.DirectorySeparatorChar, '/');

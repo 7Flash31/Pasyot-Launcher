@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
@@ -6,14 +6,6 @@ using System.Text.Json;
 
 namespace Pasyot_Launcher.Services
 {
-    // Remembers the SHA256 the launcher itself last wrote for each synced file. This lets a
-    // later sync tell a player/mod edit (local hash no longer matches what we wrote) apart from
-    // a stale copy that simply needs the new server version (local hash still matches what we
-    // wrote, only the manifest changed) - so local changes survive updates instead of being
-    // silently overwritten.
-    //
-    // Stored inside the modpack's own profile folder (not %AppData%) so it travels with it if the
-    // player copies the folder to another PC or reinstalls the launcher.
     internal sealed class SyncBaseline
     {
         private readonly string _path;
@@ -32,7 +24,6 @@ namespace Pasyot_Launcher.Services
 
             if (data == null)
             {
-                // One-time migration: this used to live under %AppData%, keyed by pack name.
                 data = TryReadFrom(LegacyStatePath(packName));
             }
 

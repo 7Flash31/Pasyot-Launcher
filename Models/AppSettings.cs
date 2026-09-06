@@ -62,15 +62,15 @@ public class AppSettings
                     return loaded;
 
                 Debug.WriteLine(
-                    $"[AppSettings] Файл {SettingsFilePath} пуст или имеет неверный формат. " +
-                    "Используются настройки по умолчанию.");
+                    $"[AppSettings] File {SettingsFilePath} is empty or has an invalid format. " +
+                    "Using default settings.");
             }
         }
         catch (Exception ex)
         {
             Debug.WriteLine(
-                $"[AppSettings] Не удалось прочитать {SettingsFilePath}: {ex.Message}. " +
-                "Используются настройки по умолчанию.");
+                $"[AppSettings] Failed to read {SettingsFilePath}: {ex.Message}. " +
+                "Using default settings.");
         }
 
         return new AppSettings();

@@ -43,7 +43,7 @@ namespace Pasyot_Launcher.Services
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"Ошибка сохранения сессии: {ex.Message}");
+                Debug.WriteLine($"Failed to save session: {ex.Message}");
             }
         }
 
@@ -62,7 +62,7 @@ namespace Pasyot_Launcher.Services
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"Ошибка чтения сессии: {ex.Message}");
+                Debug.WriteLine($"Failed to read session: {ex.Message}");
                 return null;
             }
         }
@@ -78,7 +78,7 @@ namespace Pasyot_Launcher.Services
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"Ошибка удаления файла сессии: {ex.Message}");
+                Debug.WriteLine($"Failed to delete session file: {ex.Message}");
             }
         }
     }

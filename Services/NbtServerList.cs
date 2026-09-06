@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -6,9 +6,6 @@ using System.Text;
 
 namespace Pasyot_Launcher.Services
 {
-    // Minimal generic NBT (big-endian, uncompressed) reader/writer - just enough to read an
-    // existing servers.dat losslessly (whatever tags it holds), and add/update one entry in its
-    // "servers" list without touching anything else the user or another launcher put there.
     internal static class NbtServerList
     {
         private enum TagType : byte
@@ -39,7 +36,6 @@ namespace Pasyot_Launcher.Services
             }
             catch
             {
-                // Corrupt/unrecognized file - don't destroy the user's data, just skip silently.
                 return;
             }
 

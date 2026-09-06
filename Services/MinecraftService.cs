@@ -1,8 +1,10 @@
 ﻿using CmlLib.Core;
 using CmlLib.Core.Auth;
 using CmlLib.Core.Installer.Forge;
+using CmlLib.Core.Installer.Forge.Versions;
 using CmlLib.Core.Installers;
 using CmlLib.Core.ModLoaders.FabricMC;
+using CmlLib.Core.ModLoaders.QuiltMC;
 using CmlLib.Core.ProcessBuilder;
 using Pasyot_Launcher.Models;
 using System;
@@ -17,6 +19,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading.Tasks;
+using System.Xml.Linq;
 using static Pasyot_Launcher.Services.ModpackSyncService;
 
 namespace Pasyot_Launcher.Services
@@ -31,9 +34,6 @@ namespace Pasyot_Launcher.Services
 
         static MinecraftService()
         {
-            // CmlLib.Core.Installer.Forge opens an ad-wall page in the default browser after every
-            // Forge/NeoForge install (ForgeInstaller.showAd -> Process.Start(ForgeAdUrl)). Blanking the
-            // field makes that Process.Start throw on an empty filename, which the library swallows itself.
             try
             {
                 typeof(ForgeInstaller)
@@ -99,21 +99,27 @@ namespace Pasyot_Launcher.Services
             {
                 progress?.Report(new SyncProgressReport { Status = "Проверка и установка Fabric Loader...", Percentage = 0 });
                 var fabricInstaller = new FabricInstaller(_httpClient);
-                var loaders = await fabricInstaller.GetLoaders(mcVersion);
-                var latestLoader = loaders?.FirstOrDefault();
-                if (latestLoader != null)
-                {
-                    versionName = $"fabric-loader-{latestLoader.Version}-{mcVersion}";
-                }
+                versionName = await fabricInstaller.Install(mcVersion, path);
             }
-            else if (loaderType == "forge" || loaderType == "neoforge")
+            else if (loaderType == "quilt")
             {
-                progress?.Report(new SyncProgressReport { Status = $"Проверка и установка {loaderType}...", Percentage = 0 });
+                progress?.Report(new SyncProgressReport { Status = "Проверка и установка Quilt Loader...", Percentage = 0 });
+                var quiltInstaller = new QuiltInstaller(_httpClient);
+                versionName = await quiltInstaller.Install(mcVersion, path);
+            }
+            else if (loaderType == "forge")
+            {
+                progress?.Report(new SyncProgressReport { Status = "Проверка и установка Forge...", Percentage = 0 });
                 var forgeInstaller = new ForgeInstaller(launcher);
                 versionName = await forgeInstaller.Install(mcVersion, new ForgeInstallOptions
                 {
                     SkipIfAlreadyInstalled = true
                 });
+            }
+            else if (loaderType == "neoforge")
+            {
+                progress?.Report(new SyncProgressReport { Status = "Проверка и установка NeoForge...", Percentage = 0 });
+                versionName = await InstallNeoForgeAsync(mcVersion, launcher);
             }
 
             progress?.Report(new SyncProgressReport { Status = "Загрузка игровых библиотек и ассетов...", Percentage = 0 });
@@ -160,14 +166,86 @@ namespace Pasyot_Launcher.Services
             return process;
         }
 
+        private async Task<string> InstallNeoForgeAsync(string mcVersion, MinecraftLauncher launcher)
+        {
+            var (neoForgeVersion, installerUrl) = await ResolveNeoForgeInstallerAsync(mcVersion).ConfigureAwait(false);
+
+            var forgeVersion = new ForgeVersion(mcVersion, neoForgeVersion)
+            {
+                Files = new[]
+                {
+                    new ForgeVersionFile { Type = "installer", DirectUrl = installerUrl }
+                }
+            };
+
+            var forgeInstaller = new ForgeInstaller(launcher, _httpClient);
+            return await forgeInstaller.Install(forgeVersion, new ForgeInstallOptions
+            {
+                SkipIfAlreadyInstalled = true
+            }).ConfigureAwait(false);
+        }
+
+        private async Task<(string Version, string InstallerUrl)> ResolveNeoForgeInstallerAsync(string mcVersion)
+        {
+            if (mcVersion == "1.20.1")
+            {
+                string legacyVersion = await GetLatestMavenVersionAsync(
+                    "https://maven.neoforged.net/releases/net/neoforged/forge/maven-metadata.xml",
+                    v => v.StartsWith("1.20.1-", StringComparison.Ordinal)
+                ).ConfigureAwait(false);
+
+                return (legacyVersion,
+                    $"https://maven.neoforged.net/releases/net/neoforged/forge/{legacyVersion}/forge-{legacyVersion}-installer.jar");
+            }
+
+            string[] mcParts = mcVersion.Split('.');
+            if (mcParts.Length < 2 || !int.TryParse(mcParts[1], out _))
+                throw new InvalidOperationException($"Некорректная версия Minecraft для NeoForge: «{mcVersion}».");
+
+            string modernPrefix = mcParts.Length >= 3 ? $"{mcParts[1]}.{mcParts[2]}." : $"{mcParts[1]}.0.";
+            string version = await GetLatestMavenVersionAsync(
+                "https://maven.neoforged.net/releases/net/neoforged/neoforge/maven-metadata.xml",
+                v => v.StartsWith(modernPrefix, StringComparison.Ordinal),
+                notFoundMessage: CompareVersionStrings(mcVersion, "1.20.1") < 0
+                    ? $"NeoForge не существует для Minecraft {mcVersion} — NeoForge появился только начиная с 1.20.1."
+                    : $"Не найдена версия NeoForge для Minecraft {mcVersion}."
+            ).ConfigureAwait(false);
+
+            return (version, $"https://maven.neoforged.net/releases/net/neoforged/neoforge/{version}/neoforge-{version}-installer.jar");
+        }
+
+        private async Task<string> GetLatestMavenVersionAsync(string metadataUrl, Func<string, bool> filter, string? notFoundMessage = null)
+        {
+            string xml = await _httpClient.GetStringAsync(metadataUrl).ConfigureAwait(false);
+            var candidates = XDocument.Parse(xml).Descendants("version").Select(v => v.Value).Where(filter).ToList();
+
+            if (candidates.Count == 0)
+                throw new InvalidOperationException(notFoundMessage ?? "Не найдена подходящая версия.");
+
+            return candidates.Aggregate((best, next) => CompareVersionStrings(next, best) > 0 ? next : best);
+        }
+
+        private static int CompareVersionStrings(string a, string b)
+        {
+            string[] partsA = a.Split('.', '-');
+            string[] partsB = b.Split('.', '-');
+
+            for (int i = 0; i < Math.Max(partsA.Length, partsB.Length); i++)
+            {
+                int numA = i < partsA.Length && int.TryParse(partsA[i], out var na) ? na : 0;
+                int numB = i < partsB.Length && int.TryParse(partsB[i], out var nb) ? nb : 0;
+                int cmp = numA.CompareTo(numB);
+                if (cmp != 0) return cmp;
+            }
+
+            return 0;
+        }
+
         private static string? FindCustomSkinLoaderConfig(string gameDirectory)
         {
             string known = Path.Combine(gameDirectory, "CustomSkinLoader", "CustomSkinLoader.json");
             if (File.Exists(known)) return known;
 
-            // Fallback for other mod versions/layouts: only ever descend into folders whose
-            // name already suggests they belong to the skin mod, never the whole profile
-            // (which would also walk saves/, resourcepacks/, mods/ - thousands of files).
             IEnumerable<string> topLevelRoots = new[] { gameDirectory, Path.Combine(gameDirectory, "config") }
                 .Where(Directory.Exists);
 
@@ -212,9 +290,6 @@ namespace Pasyot_Launcher.Services
 
             string? configPath = FindCustomSkinLoaderConfig(gameDirectory);
 
-            // On the very first launch the mod hasn't run yet, so it hasn't written its own
-            // config - patching "nothing" would silently skip our entry for that whole session.
-            // Seed a minimal config ourselves in that case so Pasyot skins work from launch #1.
             bool seedingNewConfig = configPath == null;
             if (seedingNewConfig)
             {

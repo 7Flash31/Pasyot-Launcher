@@ -1,4 +1,4 @@
-using Pasyot_Launcher.Models;
+﻿using Pasyot_Launcher.Models;
 using Pasyot_Launcher.Services;
 using Pasyot_Launcher.Views;
 using Pasyot_Launcher.Views.Pages;
@@ -159,7 +159,6 @@ namespace Pasyot_Launcher
             }
             catch
             {
-                // Offline or server unreachable - leave whatever the badge already shows.
             }
         }
 
